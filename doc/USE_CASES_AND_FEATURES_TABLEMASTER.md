@@ -206,6 +206,7 @@ flowchart LR
     subgraph Sub_Analytics ["Báo cáo Doanh thu & Quản trị"]
         UC31["UC-31: Báo cáo Doanh thu, RevPASH & Tỷ lệ No-Show"]
         UC32["UC-32: Bản đồ nhiệt Bàn ăn (Popularity Heatmap)"]
+        UC34["UC-34: Phân tích Hồ sơ & Xếp hạng Khách hàng VIP"]
     end
 
     subgraph Sub_Auto ["Tiến trình Tự động Ngầm"]
@@ -596,6 +597,21 @@ Dưới đây là đặc tả chi tiết của từng Use Case nghiệp vụ ch�
   * Các bàn có tần suất khách đặt nhiều nhất được tô màu **Đỏ cam rực rỡ** (thường là bàn cạnh cửa kính ngắm phố hoặc góc sofa lãng mạn).
   * Các bàn ít được khách chọn tô màu **Xanh nhạt** (thường là bàn cạnh lối đi bếp hoặc gần nhà vệ sinh).
   * Giúp chủ nhà hàng đưa ra quyết định: Bố trí thêm vách ngăn cây xanh cho bàn ế ẩm, hoặc tăng tiền cọc đối với các bàn góc view đẹp.
+
+---
+
+### UC-34: Phân tích Hồ sơ & Xếp hạng Khách hàng VIP (VIP Customer Insights & CRM Analytics)
+* **Tác nhân:** Restaurant Owner / General Manager / Marketing Manager.
+* **Mô tả:** Phân tích dữ liệu lớn hành vi tiêu dùng và lịch sử dùng bữa của thực khách để tối ưu hóa chiến lược CRM:
+  * **Xếp hạng 4 cấp độ thành viên (Loyalty Tiers):**
+    * 👑 **PLATINUM:** Khách hàng siêu VIP (Tổng chi tiêu > 50.000.000 đ hoặc ghé quán > 10 lần).
+    * 🥇 **GOLD:** Khách hàng vàng (Tổng chi tiêu 20.000.000 đ - 50.000.000 đ hoặc ghé 6 - 10 lần).
+    * 🥈 **SILVER:** Khách hàng thân thiết (Tổng chi tiêu 5.000.000 đ - 20.000.000 đ hoặc ghé 3 - 5 lần).
+    * 🥉 **BRONZE:** Khách hàng mới / tiềm năng (Ghé 1 - 2 lần).
+  * **Phân tích hành vi ẩm thực chuyên sâu:**
+    * Thống kê quy mô bàn tiệc trung bình (*Average Party Size*).
+    * Phân tích khu vực bàn ăn ưa thích (*Favorite Zone*: Private VIP, Outdoor, Window, Bar, Standard).
+    * Theo dõi ngày ghé gần nhất (*Last Visit Date*) để chủ động chăm sóc khách quen và cá nhân hóa trải nghiệm.
 
 ---
 
