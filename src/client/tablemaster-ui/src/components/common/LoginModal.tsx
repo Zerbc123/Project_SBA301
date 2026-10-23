@@ -14,6 +14,7 @@ import {
   UserPlus,
 } from 'lucide-react';
 import type { AuthUser } from '../../types';
+import { authStorage } from '../../services/authStorage';
 
 interface LoginModalProps {
   isOpen: boolean;
@@ -103,9 +104,9 @@ export const LoginModal: React.FC<LoginModalProps> = ({
       }
 
       setSuccessMsg(`Đăng nhập thành công! Chào mừng ${data.user.fullName}`);
-      localStorage.setItem('tm_access_token', data.accessToken);
-      localStorage.setItem('tm_refresh_token', data.refreshToken);
-      localStorage.setItem('tm_user', JSON.stringify(data.user));
+      authStorage.setAccessToken(data.accessToken);
+      authStorage.setRefreshToken(data.refreshToken);
+      authStorage.setUser(data.user);
 
       setTimeout(() => {
         onLoginSuccess(data.user, data.accessToken, data.refreshToken);
@@ -172,9 +173,9 @@ export const LoginModal: React.FC<LoginModalProps> = ({
       }
 
       setSuccessMsg(`Đăng ký tài khoản thành công! Xin chào ${data.user.fullName}`);
-      localStorage.setItem('tm_access_token', data.accessToken);
-      localStorage.setItem('tm_refresh_token', data.refreshToken);
-      localStorage.setItem('tm_user', JSON.stringify(data.user));
+      authStorage.setAccessToken(data.accessToken);
+      authStorage.setRefreshToken(data.refreshToken);
+      authStorage.setUser(data.user);
 
       setTimeout(() => {
         onLoginSuccess(data.user, data.accessToken, data.refreshToken);
