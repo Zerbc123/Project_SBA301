@@ -22,6 +22,7 @@ import org.springframework.web.server.ResponseStatusException;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.ZonedDateTime;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -365,6 +366,7 @@ public class AuthService {
     public UserDto mapToUserDto(User user) {
         int points = user.getLoyaltyPoints() != null ? user.getLoyaltyPoints() : 0;
         VipTier tier = VipTier.fromPoints(points);
+        boolean hasPassword = user.getPasswordHash() != null && !user.getPasswordHash().trim().isEmpty();
 
         return UserDto.builder()
                 .id(user.getId())
@@ -378,7 +380,95 @@ public class AuthService {
                 .vipTierName(tier.getDisplayName())
                 .avatarUrl(user.getAvatarUrl())
                 .dietaryPreferences(user.getDietaryPreferences())
+                .hasPassword(hasPassword)
+                .createdAt(user.getCreatedAt() != null ? user.getCreatedAt().toString() : null)
                 .build();
+    }
+
+    @Transactional(readOnly = true)
+    public List<UserDto> getAllUsersForAdmin(String roleFilter, String userType, String search) {
+        List<User> allUsers = userRepository.findAll();
+        String q = search != null ? search.trim().toLowerCase() : "";
+
+        return allUsers.stream()
+                .filter(u -> {
+                    // Filter by role
+                    if (roleFilter != null && !roleFilter.equalsIgnoreCase("ALL")) {
+                        if (roleFilter.equalsIgnoreCase("STAFF")) {
+                            if (u.getRole() == UserRole.ROLE_CUSTOMER) return false;
+                        } else if (!u.getRole().name().equalsIgnoreCase(roleFilter)) {
+                            return false;
+                        }
+                    }
+                    // Filter by userType (GUEST vs REGISTERED)
+                    boolean hasPass = u.getPasswordHash() != null && !u.getPasswordHash().trim().isEmpty();
+                    if (userType != null && !userType.equalsIgnoreCase("ALL")) {
+                        if (userType.equalsIgnoreCase("GUEST") && hasPass) return false;
+                        if (userType.equalsIgnoreCase("REGISTERED") && !hasPass) return false;
+                    }
+                    // Search query
+                    if (!q.isEmpty()) {
+                        String name = u.getFullName() != null ? u.getFullName().toLowerCase() : "";
+                        String phone = u.getPhoneNumber() != null ? u.getPhoneNumber().toLowerCase() : "";
+                        String email = u.getEmail() != null ? u.getEmail().toLowerCase() : "";
+                        return name.contains(q) || phone.contains(q) || email.contains(q);
+                    }
+                    return true;
+                })
+                .map(this::mapToUserDto)
+                .toList();
+    }
+
+    @Transactional
+    public UserDto toggleUserStatus(UUID userId) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Không tìm thấy người dùng"));
+        user.setIsActive(!Boolean.TRUE.equals(user.getIsActive()));
+        User saved = userRepository.save(user);
+        return mapToUserDto(saved);
+    }
+
+    @Transactional
+    public UserDto setPasswordForUser(UUID userId, String newPassword) {
+        if (newPassword == null || newPassword.trim().length() < 6) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Mật khẩu phải có tối thiểu 6 ký tự");
+        }
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Không tìm thấy người dùng"));
+        user.setPasswordHash(passwordEncoder.encode(newPassword.trim()));
+        User saved = userRepository.save(user);
+        return mapToUserDto(saved);
+    }
+
+    @Transactional
+    public UserDto syncGuestBookingUser(String name, String phone, String email) {
+        String normalizedPhone = PhoneNumberUtil.normalizePhoneNumber(phone);
+        Optional<User> existing = userRepository.findByPhoneNumber(normalizedPhone);
+        if (existing.isEmpty() && phone != null) {
+            existing = userRepository.findByPhoneNumber(phone.trim());
+        }
+
+        if (existing.isPresent()) {
+            User u = existing.get();
+            if ((u.getEmail() == null || u.getEmail().isEmpty()) && email != null && !email.trim().isEmpty()) {
+                u.setEmail(email.trim().toLowerCase());
+                u = userRepository.save(u);
+            }
+            return mapToUserDto(u);
+        }
+
+        // Create new guest diner (passwordHash = null)
+        User guest = User.builder()
+                .fullName(name != null && !name.trim().isEmpty() ? name.trim() : "Khách Vãng Lai")
+                .phoneNumber(normalizedPhone)
+                .email(email != null && !email.trim().isEmpty() ? email.trim().toLowerCase() : null)
+                .passwordHash(null)
+                .role(UserRole.ROLE_CUSTOMER)
+                .isActive(true)
+                .loyaltyPoints(0)
+                .build();
+        User saved = userRepository.save(guest);
+        return mapToUserDto(saved);
     }
 
     public static String hashToken(String token) {

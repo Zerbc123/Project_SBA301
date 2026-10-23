@@ -26,4 +26,6 @@ public class UserDto {
     private String vipTierName;
     private String avatarUrl;
     private String dietaryPreferences;
+    private Boolean hasPassword;
+    private String createdAt;
 }
