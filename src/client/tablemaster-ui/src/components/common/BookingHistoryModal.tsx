@@ -53,10 +53,23 @@ export const BookingHistoryModal: React.FC<BookingHistoryModalProps> = ({
   useEffect(() => {
     if (!isOpen) return;
 
+    if (!currentUser) {
+      setBookingsList([]);
+      setLoading(false);
+      return;
+    }
+
     setLoading(true);
     bookingApi
       .getMyBookings(currentUser?.id)
       .then((res) => {
+        // Lọc các đơn localBookings chỉ thuộc về chính user hiện tại
+        const userLocals = localBookings.filter(
+          (local) =>
+            (currentUser.phone && local.phone === currentUser.phone) ||
+            (currentUser.email && local.email === currentUser.email)
+        );
+
         if (res.success && Array.isArray(res.data)) {
           const mapped: BookingDetails[] = res.data.map((b: BackendBooking) => ({
             bookingId: b.bookingCode || b.id.substring(0, 8),
@@ -92,10 +105,9 @@ export const BookingHistoryModal: React.FC<BookingHistoryModalProps> = ({
             rawStatus: b.status,
           }));
 
-          // Gộp với local bookings vừa tạo trong phiên làm việc
-          const merged = [...mapped];
           const existingCodes = new Set(mapped.map((m) => m.bookingId));
-          localBookings.forEach((local) => {
+          const merged = [...mapped];
+          userLocals.forEach((local) => {
             if (!existingCodes.has(local.bookingId)) {
               merged.push(local);
             }
@@ -103,12 +115,17 @@ export const BookingHistoryModal: React.FC<BookingHistoryModalProps> = ({
 
           setBookingsList(merged);
         } else {
-          setBookingsList(localBookings);
+          setBookingsList(userLocals);
         }
       })
       .catch((err) => {
         console.warn('⚠️ Lỗi khi tải lịch sử đơn từ Backend:', err);
-        setBookingsList(localBookings);
+        const userLocals = localBookings.filter(
+          (local) =>
+            (currentUser.phone && local.phone === currentUser.phone) ||
+            (currentUser.email && local.email === currentUser.email)
+        );
+        setBookingsList(userLocals);
       })
       .finally(() => setLoading(false));
   }, [isOpen, currentUser, localBookings]);

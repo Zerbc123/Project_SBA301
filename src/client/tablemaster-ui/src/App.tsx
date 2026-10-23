@@ -21,15 +21,74 @@ import { RestaurantManagementPage } from './views/restaurant/RestaurantManagemen
 import { INITIAL_TABLES, INITIAL_BOOKINGS, INITIAL_TABLE_ORDERS } from './data/mockData';
 import type { TableItem, TableStatus, BookingDetails, TableOrderRecord, AuthUser } from './types';
 import { bookingApi, type BackendBooking } from './services/bookingApi';
+import { authStorage } from './services/authStorage';
+
+export const getDefaultViewForRole = (role?: string): ActiveView => {
+  if (!role) return 'landing';
+  const r = role.toUpperCase();
+  if (r.includes('ADMIN') || r.includes('MANAGER')) return 'admin';
+  if (r.includes('HOST')) return 'host';
+  if (r.includes('WAITER')) return 'waiter';
+  return 'landing';
+};
 
 export function App() {
-  const [currentView, setCurrentView] = useState<ActiveView>('landing');
+  // Authentication state (using sessionStorage so tokens wipe completely when browser/tab is closed)
+  const [currentUser, setCurrentUser] = useState<AuthUser | null>(() => {
+    return authStorage.getUser();
+  });
+
+  const [currentView, setCurrentView] = useState<ActiveView>(() => {
+    const user = authStorage.getUser();
+    return getDefaultViewForRole(user?.role);
+  });
   const [targetFloor, setTargetFloor] = useState<1 | 2 | 3>(1);
   const [tables, setTables] = useState<TableItem[]>(INITIAL_TABLES);
   const [bookings, setBookings] = useState<BookingDetails[]>(INITIAL_BOOKINGS);
   const [tableOrders, setTableOrders] = useState<Record<string, TableOrderRecord>>(INITIAL_TABLE_ORDERS);
   const [isHistoryModalOpen, setIsHistoryModalOpen] = useState<boolean>(false);
   const [rebookData, setRebookData] = useState<BookingDetails | null>(null);
+
+  // Auto-verify token validity & blacklist/revocation status with backend on startup
+  useEffect(() => {
+    // Automatically wipe legacy localStorage tokens
+    localStorage.removeItem('tm_user');
+    localStorage.removeItem('tm_access_token');
+    localStorage.removeItem('tm_refresh_token');
+
+    const accessToken = authStorage.getAccessToken();
+    if (!accessToken) {
+      if (currentUser) {
+        authStorage.clear();
+        setCurrentUser(null);
+        setCurrentView('landing');
+      }
+      return;
+    }
+
+    // Call /api/v1/auth/me to verify token with auth-service & Redis blacklist
+    fetch('/api/v1/auth/me', {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    })
+      .then(async (res) => {
+        if (res.ok) {
+          const freshUser = await res.json();
+          setCurrentUser(freshUser);
+          authStorage.setUser(freshUser);
+        } else {
+          // Token is invalid, expired, revoked in Redis, or DB was wiped
+          console.warn('⚠️ [Auth] Phiên đăng nhập không hợp lệ hoặc đã bị thu hồi/hết hạn. Tự động dọn dẹp...');
+          authStorage.clear();
+          setCurrentUser(null);
+          setCurrentView('landing');
+        }
+      })
+      .catch((err) => {
+        console.warn('⚠️ [Auth] Không thể kết nối tới backend để xác thực token:', err);
+      });
+  }, []);
 
   useEffect(() => {
     bookingApi
@@ -69,22 +128,13 @@ export function App() {
       });
   }, []);
 
-  // Authentication state
-  const [currentUser, setCurrentUser] = useState<AuthUser | null>(() => {
-    try {
-      const saved = localStorage.getItem('tm_user');
-      return saved ? JSON.parse(saved) : null;
-    } catch {
-      return null;
-    }
-  });
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
   const [isReviewModalOpen, setIsReviewModalOpen] = useState(false);
 
   const handleLogout = async () => {
-    const refreshToken = localStorage.getItem('tm_refresh_token');
-    const accessToken = localStorage.getItem('tm_access_token');
+    const refreshToken = authStorage.getRefreshToken();
+    const accessToken = authStorage.getAccessToken();
     try {
       if (refreshToken || accessToken) {
         await fetch('/api/v1/auth/logout', {
@@ -99,14 +149,24 @@ export function App() {
     } catch (e) {
       console.warn('Logout API error:', e);
     } finally {
-      localStorage.removeItem('tm_user');
-      localStorage.removeItem('tm_access_token');
-      localStorage.removeItem('tm_refresh_token');
+      authStorage.clear();
       setCurrentUser(null);
+      setCurrentView('landing');
     }
   };
 
   const handleNavigate = (view: ActiveView, floor?: 1 | 2 | 3) => {
+    // Role protection for internal staff portals
+    const staffViews: ActiveView[] = ['admin', 'restaurant', 'host', 'waiter'];
+    if (staffViews.includes(view)) {
+      const r = currentUser?.role?.toUpperCase() || '';
+      const isStaff = r.includes('ADMIN') || r.includes('MANAGER') || r.includes('HOST') || r.includes('WAITER');
+      if (!isStaff) {
+        setIsLoginModalOpen(true);
+        return;
+      }
+    }
+
     if (floor) {
       setTargetFloor(floor);
     }
@@ -499,6 +559,8 @@ export function App() {
         onClose={() => setIsLoginModalOpen(false)}
         onLoginSuccess={(user) => {
           setCurrentUser(user);
+          const targetView = getDefaultViewForRole(user.role);
+          setCurrentView(targetView);
         }}
       />
 

@@ -2,10 +2,8 @@ import React, { useState, useEffect } from 'react';
 import {
   Building2,
   Clock,
-  Layers,
   UtensilsCrossed,
   Calendar,
-  Grid,
   Edit,
   Trash2,
   Plus,
@@ -27,12 +25,8 @@ import {
   type MenuItem,
   type BlackoutDate,
 } from '../../services/restaurantApi';
-import { FloorPlanEditor } from './FloorPlanEditor';
-
 export type RestaurantTab =
   | 'overview'
-  | 'floor-plans'
-  | 'floor-editor'
   | 'tables'
   | 'time-slots'
   | 'menu'
@@ -67,8 +61,18 @@ export const RestaurantManagementPage: React.FC = () => {
   const [filterMenuCatId, setFilterMenuCatId] = useState<string>('ALL');
 
   // Modals
-  const [isFloorModalOpen, setIsFloorModalOpen] = useState(false);
-  const [floorForm, setFloorForm] = useState({ id: '', floorNumber: 1, name: '', widthPx: 1600, heightPx: 900, gridSize: 20 });
+  const [isTableModalOpen, setIsTableModalOpen] = useState(false);
+  const [tableForm, setTableForm] = useState({
+    id: '',
+    tableCode: '',
+    floorPlanId: '',
+    zoneType: 'STANDARD',
+    minCapacity: 2,
+    maxCapacity: 4,
+    customDeposit: 0,
+    shape: 'RECT' as 'RECT' | 'SQUARE' | 'CIRCLE',
+    isActive: true,
+  });
 
   const [isSlotModalOpen, setIsSlotModalOpen] = useState(false);
   const [slotForm, setSlotForm] = useState({ id: '', slotName: '', startTime: '11:00:00', endTime: '13:00:00', maxCapacity: 40, isActive: true });
@@ -154,32 +158,36 @@ export const RestaurantManagementPage: React.FC = () => {
     }
   };
 
-  // Floor Plan Form Submit
-  const handleSaveFloor = async (e: React.FormEvent) => {
+  // Table Form Submit
+  const handleSaveTable = async (e: React.FormEvent) => {
     e.preventDefault();
-    try {
-      if (floorForm.id) {
-        await restaurantApi.updateFloorPlan(floorForm.id, floorForm);
-        showToast('Cập nhật thông tin sơ đồ tầng thành công!', 'success');
-      } else {
-        await restaurantApi.createFloorPlan(floorForm);
-        showToast('Thêm sơ đồ tầng mới thành công!', 'success');
-      }
-      setIsFloorModalOpen(false);
-      await loadAllData();
-    } catch (err: any) {
-      showToast(err.message || 'Lỗi lưu sơ đồ tầng', 'error');
+    if (!tableForm.tableCode.trim()) {
+      showToast('Vui lòng nhập mã bàn!', 'error');
+      return;
     }
-  };
-
-  const handleDeleteFloor = async (id: string) => {
-    if (!confirm('Bạn có chắc chắn muốn xóa sơ đồ tầng này? Tất cả các bàn thuộc tầng cũng sẽ bị xóa.')) return;
     try {
-      await restaurantApi.deleteFloorPlan(id);
-      showToast('Đã xóa sơ đồ tầng thành công', 'success');
+      const payload: Partial<Table> = {
+        tableCode: tableForm.tableCode.trim().toUpperCase(),
+        floorPlanId: tableForm.floorPlanId || (floorPlans[0]?.id || ''),
+        zoneType: tableForm.zoneType,
+        minCapacity: Number(tableForm.minCapacity) || 1,
+        maxCapacity: Number(tableForm.maxCapacity) || 4,
+        customDeposit: Number(tableForm.customDeposit) || 0,
+        shape: tableForm.shape,
+        isActive: tableForm.isActive,
+      };
+
+      if (tableForm.id) {
+        await restaurantApi.updateTable(tableForm.id, payload);
+        showToast('Cập nhật thông tin bàn thành công!', 'success');
+      } else {
+        await restaurantApi.createTable(payload);
+        showToast('Thêm bàn mới thành công!', 'success');
+      }
+      setIsTableModalOpen(false);
       await loadAllData();
     } catch (err: any) {
-      showToast(err.message || 'Lỗi khi xóa tầng', 'error');
+      showToast(err.message || 'Lỗi lưu bàn ăn', 'error');
     }
   };
 
@@ -382,45 +390,7 @@ export const RestaurantManagementPage: React.FC = () => {
               </div>
             </button>
 
-            {/* Tab 2: Floor Plans */}
-            <button
-              onClick={() => setActiveTab('floor-plans')}
-              className={`w-full flex items-center justify-between px-4 py-3 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
-                activeTab === 'floor-plans'
-                  ? 'bg-gradient-to-r from-[#C4A480] to-[#B3936F] text-white shadow-sm font-bold'
-                  : 'text-[#6B5E54] hover:bg-[#F3ECE0] hover:text-[#2C221E]'
-              }`}
-            >
-              <div className="flex items-center gap-3">
-                <Layers className="w-4 h-4" />
-                <span>Sơ Đồ Mặt Bằng</span>
-              </div>
-              <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
-                activeTab === 'floor-plans' ? 'bg-white text-[#8C6A43]' : 'bg-[#EFE7DC] text-[#78716C]'
-              }`}>
-                {floorPlans.length}
-              </span>
-            </button>
-
-            {/* Tab 3: Interactive Floor Editor */}
-            <button
-              onClick={() => setActiveTab('floor-editor')}
-              className={`w-full flex items-center justify-between px-4 py-3 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
-                activeTab === 'floor-editor'
-                  ? 'bg-gradient-to-r from-[#C4A480] to-[#B3936F] text-white shadow-sm font-bold'
-                  : 'text-[#6B5E54] hover:bg-[#F3ECE0] hover:text-[#2C221E]'
-              }`}
-            >
-              <div className="flex items-center gap-3">
-                <Grid className="w-4 h-4" />
-                <span>Trình Vẽ Sơ Đồ 2D</span>
-              </div>
-              <span className="text-[10px] bg-[#3D7058] text-white px-2 py-0.5 rounded-full font-bold">
-                Kéo Thả
-              </span>
-            </button>
-
-            {/* Tab 4: Table Inventory */}
+            {/* Tab 2: Table Inventory */}
             <button
               onClick={() => setActiveTab('tables')}
               className={`w-full flex items-center justify-between px-4 py-3 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
@@ -537,8 +507,6 @@ export const RestaurantManagementPage: React.FC = () => {
             </div>
             <h1 className="font-serif text-2xl sm:text-3xl font-bold text-[#1C1917] tracking-tight">
               {activeTab === 'overview' && 'Hồ Sơ Nhà Hàng & Thiết Lập Cọc'}
-              {activeTab === 'floor-plans' && 'Danh Sách Sơ Đồ Mặt Bằng & Tầng'}
-              {activeTab === 'floor-editor' && 'Trình Biên Tập Sơ Đồ 2D Tương Tác'}
               {activeTab === 'tables' && 'Quản Lý Danh Sách & Thuộc Tính Bàn'}
               {activeTab === 'time-slots' && 'Quản Lý Khung Giờ & Công Suất Ca Trực'}
               {activeTab === 'menu' && 'Quản Lý Thực Đơn & Danh Mục Món Ăn'}
@@ -771,116 +739,7 @@ export const RestaurantManagementPage: React.FC = () => {
           </div>
         )}
 
-        {/* TAB 2: FLOOR PLANS MANAGEMENT */}
-        {activeTab === 'floor-plans' && (
-          <div className="space-y-6">
-            <div className="flex items-center justify-between pb-2">
-              <div>
-                <h3 className="font-serif text-xl font-bold text-[#1C1917]">
-                  Danh Sách Sơ Đồ Tầng & Không Gian
-                </h3>
-                <p className="text-xs text-[#78716C]">Quản lý các tầng phục vụ của nhà hàng</p>
-              </div>
-
-              <button
-                onClick={() => {
-                  setFloorForm({ id: '', floorNumber: floorPlans.length + 1, name: `Tầng ${floorPlans.length + 1}`, widthPx: 1600, heightPx: 900, gridSize: 20 });
-                  setIsFloorModalOpen(true);
-                }}
-                className="btn-tan px-4 py-2 text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-xs"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                <span>+ Thêm Tầng Mới</span>
-              </button>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              {floorPlans.map((floor) => (
-                <div
-                  key={floor.id}
-                  className="bg-white border border-[#EBE5DC] rounded-3xl p-6 shadow-xs flex flex-col justify-between space-y-4 hover:border-[#C4A480] transition-colors group"
-                >
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <span className="w-8 h-8 rounded-full bg-[#FAF7F2] text-[#8C6A43] font-serif font-bold text-sm flex items-center justify-center border border-[#E0D7C9]">
-                        {floor.floorNumber}
-                      </span>
-                      <span
-                        className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full border ${
-                          floor.isPublished
-                            ? 'bg-[#ECFDF5] text-[#065F46] border-[#A7F3D0]'
-                            : 'bg-[#FEF2F2] text-[#991B1B] border-[#FECACA]'
-                        }`}
-                      >
-                        {floor.isPublished ? 'Đã Xuất Bản' : 'Bản Nháp'}
-                      </span>
-                    </div>
-
-                    <h4 className="font-serif text-lg font-bold text-[#1C1917]">
-                      {floor.name}
-                    </h4>
-
-                    <div className="text-xs text-[#78716C] space-y-1">
-                      <p>Kích thước canvas: <strong>{floor.widthPx} × {floor.heightPx}px</strong></p>
-                      <p>Lưới tọa độ: <strong>{floor.gridSize}px</strong></p>
-                      <p>Số bàn hiện có: <strong>{floor.tables?.length || 0} bàn</strong></p>
-                    </div>
-                  </div>
-
-                  <div className="pt-3 border-t border-[#EBE5DC] flex items-center gap-2">
-                    <button
-                      onClick={() => {
-                        setSelectedFloorId(floor.id);
-                        setActiveTab('floor-editor');
-                      }}
-                      className="flex-1 btn-tan py-2 text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs"
-                    >
-                      <Grid className="w-3.5 h-3.5" />
-                      <span>Vẽ Sơ Đồ 2D</span>
-                    </button>
-
-                    <button
-                      onClick={() => {
-                        setFloorForm({
-                          id: floor.id,
-                          floorNumber: floor.floorNumber,
-                          name: floor.name,
-                          widthPx: floor.widthPx,
-                          heightPx: floor.heightPx,
-                          gridSize: floor.gridSize,
-                        });
-                        setIsFloorModalOpen(true);
-                      }}
-                      className="p-2 rounded-xl text-[#78716C] hover:bg-[#FAF7F2] border border-[#E0D7C9] cursor-pointer"
-                      title="Sửa cấu hình tầng"
-                    >
-                      <Edit className="w-3.5 h-3.5" />
-                    </button>
-
-                    <button
-                      onClick={() => handleDeleteFloor(floor.id)}
-                      className="p-2 rounded-xl text-rose-600 hover:bg-rose-50 border border-rose-200 cursor-pointer"
-                      title="Xóa tầng"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* TAB 3: INTERACTIVE FLOOR EDITOR */}
-        {activeTab === 'floor-editor' && (
-          <FloorPlanEditor
-            floorPlans={floorPlans}
-            selectedFloorId={selectedFloorId}
-            onSelectFloorId={setSelectedFloorId}
-            onRefreshData={loadAllData}
-            onShowToast={showToast}
-          />
-        )}
+        {/* TAB 2: TABLE INVENTORY LIST */}
 
         {/* TAB 4: TABLE INVENTORY LIST */}
         {activeTab === 'tables' && (
@@ -893,7 +752,7 @@ export const RestaurantManagementPage: React.FC = () => {
                 <p className="text-xs text-[#78716C]">Quản lý chi tiết sức chứa, loại bàn và tiền cọc từng vị trí</p>
               </div>
 
-              {/* Filters */}
+              {/* Filters & Actions */}
               <div className="flex flex-wrap items-center gap-3">
                 <div className="relative w-48 sm:w-56">
                   <Search className="w-3.5 h-3.5 text-[#78716C] absolute left-3 top-1/2 -translate-y-1/2" />
@@ -916,6 +775,27 @@ export const RestaurantManagementPage: React.FC = () => {
                     <option key={f.id} value={f.id}>{f.name}</option>
                   ))}
                 </select>
+
+                <button
+                  onClick={() => {
+                    setTableForm({
+                      id: '',
+                      tableCode: `T${tables.length + 1}`,
+                      floorPlanId: floorPlans[0]?.id || '',
+                      zoneType: 'STANDARD',
+                      minCapacity: 2,
+                      maxCapacity: 4,
+                      customDeposit: 0,
+                      shape: 'RECT',
+                      isActive: true,
+                    });
+                    setIsTableModalOpen(true);
+                  }}
+                  className="btn-tan px-4 py-1.5 text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-xs"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>+ Thêm Bàn Mới</span>
+                </button>
               </div>
             </div>
 
@@ -969,6 +849,25 @@ export const RestaurantManagementPage: React.FC = () => {
                           </span>
                         </td>
                         <td className="py-3.5 px-3 text-right">
+                          <button
+                            onClick={() => {
+                              setTableForm({
+                                id: t.id,
+                                tableCode: t.tableCode,
+                                floorPlanId: t.floorPlanId,
+                                zoneType: t.zoneType,
+                                minCapacity: t.minCapacity,
+                                maxCapacity: t.maxCapacity,
+                                customDeposit: t.customDeposit || 0,
+                                shape: t.shape,
+                                isActive: t.isActive,
+                              });
+                              setIsTableModalOpen(true);
+                            }}
+                            className="text-[#8C6A43] hover:underline font-semibold text-[11px] mr-3 cursor-pointer"
+                          >
+                            Sửa
+                          </button>
                           <button
                             onClick={async () => {
                               try {
@@ -1353,66 +1252,133 @@ export const RestaurantManagementPage: React.FC = () => {
         )}
       </main>
 
-      {/* FLOOR PLAN MODAL */}
-      {isFloorModalOpen && (
+      {/* TABLE MODAL */}
+      {isTableModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4">
           <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-[#EBE5DC] space-y-4">
             <h3 className="font-serif text-lg font-bold text-[#1C1917]">
-              {floorForm.id ? 'Sửa Sơ Đồ Tầng' : '+ Thêm Sơ Đồ Tầng Mới'}
+              {tableForm.id ? 'Sửa Thông Tin Bàn Ăn' : '+ Thêm Bàn Ăn Mới'}
             </h3>
-            <form onSubmit={handleSaveFloor} className="space-y-4 text-xs">
-              <div>
-                <label className="font-bold block mb-1">Số Tầng (Thứ tự) *</label>
-                <input
-                  type="number"
-                  min={1}
-                  required
-                  value={floorForm.floorNumber}
-                  onChange={(e) => setFloorForm({ ...floorForm, floorNumber: parseInt(e.target.value) || 1 })}
-                  className="w-full px-3 py-2 rounded-xl border border-[#E0D7C9] bg-[#FAF7F2]"
-                />
-              </div>
-              <div>
-                <label className="font-bold block mb-1">Tên Tầng / Khu Vực *</label>
-                <input
-                  type="text"
-                  required
-                  value={floorForm.name}
-                  onChange={(e) => setFloorForm({ ...floorForm, name: e.target.value })}
-                  placeholder="VD: Tầng 1 - Sảnh Vòm & Bar"
-                  className="w-full px-3 py-2 rounded-xl border border-[#E0D7C9] bg-[#FAF7F2]"
-                />
-              </div>
+            <form onSubmit={handleSaveTable} className="space-y-4 text-xs">
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="font-bold block mb-1">Chiều Rộng (px)</label>
+                  <label className="font-bold block mb-1">Mã Bàn *</label>
+                  <input
+                    type="text"
+                    required
+                    value={tableForm.tableCode}
+                    onChange={(e) => setTableForm({ ...tableForm, tableCode: e.target.value.toUpperCase() })}
+                    placeholder="VD: T1-01, VIP-02"
+                    className="w-full px-3 py-2 rounded-xl border border-[#E0D7C9] bg-[#FAF7F2] font-mono font-bold"
+                  />
+                </div>
+                <div>
+                  <label className="font-bold block mb-1">Khu Vực Bàn *</label>
+                  <select
+                    value={tableForm.zoneType}
+                    onChange={(e) => setTableForm({ ...tableForm, zoneType: e.target.value })}
+                    className="w-full px-3 py-2 rounded-xl border border-[#E0D7C9] bg-[#FAF7F2] font-semibold"
+                  >
+                    <option value="STANDARD">Sảnh Tiêu Chuẩn</option>
+                    <option value="WINDOW_VIEW">Cửa Sổ View Phố</option>
+                    <option value="VIP">Phòng VIP Riêng Tư</option>
+                    <option value="OUTDOOR">Ban Công Ngoài Trời</option>
+                    <option value="BAR_SIDE">Cạnh Quầy Bar</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="font-bold block mb-1">Tầng Phục Vụ</label>
+                <select
+                  value={tableForm.floorPlanId}
+                  onChange={(e) => setTableForm({ ...tableForm, floorPlanId: e.target.value })}
+                  className="w-full px-3 py-2 rounded-xl border border-[#E0D7C9] bg-[#FAF7F2]"
+                >
+                  {floorPlans.map((f) => (
+                    <option key={f.id} value={f.id}>{f.name} (Tầng {f.floorNumber})</option>
+                  ))}
+                  {floorPlans.length === 0 && <option value="">Tầng 1 (Mặc định)</option>}
+                </select>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="font-bold block mb-1">Sức Chứa Tối Thiểu *</label>
                   <input
                     type="number"
-                    value={floorForm.widthPx}
-                    onChange={(e) => setFloorForm({ ...floorForm, widthPx: parseInt(e.target.value) || 1600 })}
+                    min={1}
+                    max={50}
+                    required
+                    value={tableForm.minCapacity}
+                    onChange={(e) => setTableForm({ ...tableForm, minCapacity: parseInt(e.target.value) || 1 })}
                     className="w-full px-3 py-2 rounded-xl border border-[#E0D7C9] bg-[#FAF7F2]"
                   />
                 </div>
                 <div>
-                  <label className="font-bold block mb-1">Chiều Cao (px)</label>
+                  <label className="font-bold block mb-1">Sức Chứa Tối Đa *</label>
                   <input
                     type="number"
-                    value={floorForm.heightPx}
-                    onChange={(e) => setFloorForm({ ...floorForm, heightPx: parseInt(e.target.value) || 900 })}
+                    min={1}
+                    max={50}
+                    required
+                    value={tableForm.maxCapacity}
+                    onChange={(e) => setTableForm({ ...tableForm, maxCapacity: parseInt(e.target.value) || 2 })}
                     className="w-full px-3 py-2 rounded-xl border border-[#E0D7C9] bg-[#FAF7F2]"
                   />
                 </div>
               </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="font-bold block mb-1">Hình Dạng</label>
+                  <select
+                    value={tableForm.shape}
+                    onChange={(e) => setTableForm({ ...tableForm, shape: e.target.value as any })}
+                    className="w-full px-3 py-2 rounded-xl border border-[#E0D7C9] bg-[#FAF7F2]"
+                  >
+                    <option value="RECT">Chữ Nhật</option>
+                    <option value="SQUARE">Hình Vuông</option>
+                    <option value="CIRCLE">Bàn Tròn</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="font-bold block mb-1">Tiền Cọc Riêng (VNĐ)</label>
+                  <input
+                    type="number"
+                    min={0}
+                    step={50000}
+                    value={tableForm.customDeposit}
+                    onChange={(e) => setTableForm({ ...tableForm, customDeposit: parseFloat(e.target.value) || 0 })}
+                    placeholder="0 = Theo mặc định"
+                    className="w-full px-3 py-2 rounded-xl border border-[#E0D7C9] bg-[#FAF7F2] font-mono"
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 pt-1">
+                <input
+                  type="checkbox"
+                  id="tableActiveCheck"
+                  checked={tableForm.isActive}
+                  onChange={(e) => setTableForm({ ...tableForm, isActive: e.target.checked })}
+                  className="rounded text-[#8C6A43] focus:ring-[#8C6A43]"
+                />
+                <label htmlFor="tableActiveCheck" className="font-semibold text-xs text-[#2C221E] cursor-pointer">
+                  Bàn đang sẵn sàng phục vụ đón khách
+                </label>
+              </div>
+
               <div className="flex items-center justify-end gap-2 pt-3 border-t border-[#EBE5DC]">
                 <button
                   type="button"
-                  onClick={() => setIsFloorModalOpen(false)}
+                  onClick={() => setIsTableModalOpen(false)}
                   className="px-4 py-2 rounded-xl text-[#78716C]"
                 >
                   Hủy
                 </button>
                 <button type="submit" className="btn-tan px-5 py-2 font-bold cursor-pointer">
-                  Lưu Sơ Đồ
+                  {tableForm.id ? 'Lưu Thay Đổi' : 'Tạo Bàn Mới'}
                 </button>
               </div>
             </form>
