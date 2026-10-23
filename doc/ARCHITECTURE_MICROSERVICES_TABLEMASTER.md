@@ -10,7 +10,7 @@
 > * **In-Memory & Distributed Locking:** Redis Cluster (Redisson Distributed Lock, Key-Value Caching, Token Blacklist).
 > * **Persistence Layer:** PostgreSQL 16+ (Database-per-Service, JSONB layout indices, Flyway migration).
 > * **Security & Identity:** Spring Security 6, JWT (RSA256 Asymmetric, Access + Refresh Tokens, Gateway Authentication Offloading).
-> * **Frontend:** React 18+ (Vite), Tailwind CSS, Konva.js (HTML5 Canvas 2D), STOMP Client over SockJS / WebSocket.
+> * **Frontend:** React 18+ (Vite), Tailwind CSS, Framer Motion (Table Box Grid UI), STOMP Client over SockJS / WebSocket.
 > * **Observability & DevOps:** Docker Compose / Kubernetes (K8s), Prometheus, Grafana, OpenTelemetry / Micrometer Tracing, Zipkin.
 
 ---
@@ -63,7 +63,7 @@
 |    - Cấp phát RSA JWT Tokens, Quản lý tài khoản, Phân quyền RBAC (Customer, Host, Owner, Admin)       |
 +-------------------------------------------------------------------------------------------------------+
 | 4. RESTAURANT & FLOOR SERVICE: Spring Boot (Port: 8082) - DB: `tablemaster_restaurant`                 |
-|    - Quản lý nhà hàng, Khung giờ (Time Slots), Sơ đồ mặt bằng 2D (JSONB), Bàn vật lý (Tables)          |
+|    - Quản lý nhà hàng, Khung giờ (Time Slots), Quản lý Thẻ Box Bàn & Phân khu Tầng, Thực đơn món ăn   |
 +-------------------------------------------------------------------------------------------------------+
 | 5. BOOKING & LOCK SERVICE    : Spring Boot (Port: 8083) - DB: `tablemaster_booking`                   |
 |    - Redis Redlock Concurrency Engine, Giữ bàn 5 phút, Saga Orchestrator, Quản lý trạng thái bàn     |
@@ -75,7 +75,7 @@
 |    - WebSocket STOMP Broker cho Frontend Client, Gửi Mail xác nhận kèm QR Ticket, SMS / Zalo ZNS      |
 +-------------------------------------------------------------------------------------------------------+
 | 8. ANALYTICS & AUDIT SERVICE : Spring Boot (Port: 8086) - DB: `tablemaster_analytics`                |
-|    - Kafka Event Sourcing, Tính toán chỉ số RevPASH, Tỷ lệ No-Show, Heatmap khu vực bàn đắt khách     |
+|    - Kafka Event Sourcing, Tính toán chỉ số RevPASH, Tỷ lệ No-Show, Phân tích khu vực bàn đắt khách    |
 +-------------------------------------------------------------------------------------------------------+
 ```
 
@@ -85,7 +85,7 @@
 
 ```
                   +------------------------------------------------------+
-                  |          CLIENT TIER (React SPA + Konva.js)          |
+                  |   CLIENT TIER (React SPA - Dashboard & Table Box)    |
                   |  - Customer Web App      - Host Tablet POS Screen    |
                   |  - Mobile Waitstaff App  - Admin Analytics Studio    |
                   +--------------------------+---------------------------+
@@ -645,20 +645,25 @@ CREATE INDEX idx_outbox_pending ON outbox_events(status, created_at);
 
 ## 10. KIẾN TRÚC FRONTEND REACT & REAL-TIME INTERACTION
 
-### 10.1. Cấu trúc Component Sơ đồ Bàn với Konva.js (`react-konva`)
+### 10.1. Cấu trúc Component Quản lý Thẻ Box Bàn & Đặt Bàn Trực Tuyến
 
 ```
 App.jsx
  └── Layout.jsx
       ├── TopNavbar.jsx (Hiển thị đồng hồ đếm ngược, Profile)
-      └── BookingPage.jsx
-           ├── SearchFilterBar.jsx (Chi nhánh, Ngày, Giờ, Số khách)
-           ├── FloorCanvasContainer.jsx (Stage Konva.js)
-           │    ├── BackgroundLayer.jsx (Lưới Grid, Tường, Cửa sổ, Quầy Bar)
-           │    └── InteractiveTableLayer.jsx (Render danh sách bàn)
-           │         └── TableShapeNode.jsx (Rect/Circle bàn, Label, Tooltip hover, Pulse Animation)
-           ├── TableDetailDrawer.jsx (Sidebar xem chi tiết bàn đang chọn)
-           └── VietQRDepositModal.jsx (Popup quét mã QR kèm Countdown 05:00)
+      ├── BookingPage.jsx (Luồng Khách hàng Đặt Bàn theo Thông tin)
+      │    ├── BookingTimeAndPartyStep.jsx (Chọn Ngày, Khung ca, Giờ đến, Số khách)
+      │    ├── ZoneSelectorStep.jsx (Chọn Khu vực: Ban công, Quầy Bar, VIP, Cửa kính)
+      │    ├── PreOrderDishesStep.jsx (Chọn món ăn đặc biệt đặt trước)
+      │    └── VietQRDepositModal.jsx (Popup quét mã QR VietQR kèm Countdown 05:00)
+      │
+      └── HostTabletPage.jsx (Màn hình Lễ tân & Quản lý Thẻ Box Bàn)
+           ├── ShiftMetricsBar.jsx (Đếm bàn trống, bàn có khách, bàn đã cọc, bàn dọn)
+           ├── TableBoxGrid.jsx (Lưới Thẻ Box Bàn phân chia theo Tầng/Khu vực)
+           │    └── TableBoxCard.jsx (Mã bàn, Sức chứa, Màu trạng thái, Thao tác 1 chạm)
+           ├── TableMergeModal.jsx (Chọn và Gộp nhiều Thẻ Box bàn cho đoàn đông)
+           ├── TableTransferModal.jsx (Chuyển đổi khách sang bàn khác)
+           └── QRScanCheckinModal.jsx (Quét camera mã vé check-in đón khách)
 ```
 
 ---

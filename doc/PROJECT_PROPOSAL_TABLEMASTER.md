@@ -29,7 +29,7 @@
 ### 1.1. Bối cảnh Dự án: Giải pháp Gia công Độc quyền (Bespoke / Outsource)
 Dự án được xây dựng theo đơn đặt hàng phát triển phần mềm độc quyền (**Outsourced Tailored Booking Platform**) cho một thương hiệu nhà hàng ẩm thực cao cấp cụ thể (ví dụ: *The Prime Bistro & Steakhouse* – không gian 3 tầng gồm Sảnh chính, Phòng tiệc VIP và Sky Lounge Rooftop).
 
-Thay vì phải phụ thuộc vào các nền tảng trung gian đại trà (PasGo, TableNow) khiến thương hiệu bị cạnh tranh trực tiếp với hàng ngàn đối thủ và mất từ **10% đến 15% hoa hồng trên mỗi khách**, nhà hàng quyết định đầu tư sở hữu riêng một hệ thống đặt bàn mặt bằng 2D thời gian thực mang đậm bản sắc thương hiệu.
+Thay vì phải phụ thuộc vào các nền tảng trung gian đại trà (PasGo, TableNow) khiến thương hiệu bị cạnh tranh trực tiếp với hàng ngàn đối thủ và mất từ **10% đến 15% hoa hồng trên mỗi khách**, nhà hàng quyết định đầu tư sở hữu riêng một hệ thống đặt bàn và quản lý nhà hàng thời gian thực mang đậm bản sắc thương hiệu.
 
 ### 1.2. Nỗi đau của Nhà hàng (Restaurant Pain Points)
 * **Mất khách hàng trung thành vào tay các sàn trung gian:** Khách đặt qua app bên thứ ba thường so sánh giá với các quán xung quanh, nhà hàng không thể xây dựng tệp khách VIP thân thiết riêng.
@@ -38,9 +38,9 @@ Thay vì phải phụ thuộc vào các nền tảng trung gian đại trà (Pas
 * **Mù mờ thông tin chỗ ngồi:** Thực khách cao cấp chi trả tiền triệu cho một bữa tối nhưng không biết trước mình sẽ ngồi ở góc ồn ào hay bàn cạnh lối đi nhà vệ sinh.
 
 ### 1.3. Giải pháp TableMaster đem lại cho Nhà hàng
-* **Kênh đặt bàn trực tiếp (Direct Booking Channel):** Khách hàng truy cập trực tiếp website/app của chính nhà hàng, tự tay chọn vị trí bàn mong muốn trên sơ đồ 2D thời gian thực theo từng tầng lầu (Tầng 1, Phòng VIP, Rooftop).
+* **Kênh đặt bàn trực tiếp (Direct Booking Channel):** Khách hàng truy cập trực tiếp website/app của chính nhà hàng, nhập thông tin đặt bàn (Ngày, Giờ, Số khách, Khu vực Zone yêu cầu: Ban công, Phòng VIP, Cửa kính...) một cách trực quan, nhanh chóng.
 * **Khóa bàn chống tranh chấp & Cọc VietQR trực tiếp:** Bàn được khóa tạm 5 phút bằng Redis Redlock; tiền cọc chuyển khoản **thẳng vào số tài khoản ngân hàng của chính nhà hàng** (không qua ví trung gian của bất kỳ bên thứ ba nào).
-* **Màn hình Tablet Lễ tân tại sảnh (Host Dispatch Screen):** Lễ tân đón khách chỉ cần quét mã QR trên điện thoại khách để check-in tự động, chạm 1 chạm để đổi trạng thái bàn sang đang dùng bữa (`SEATED`) hoặc đang dọn dẹp (`CLEANING`).
+* **Màn hình Tablet Lễ tân tại sảnh (Host Dispatch Screen):** Lễ tân đón khách chỉ cần quét mã QR trên điện thoại khách để check-in tự động, quản lý bàn qua lưới các **Thẻ Box Bàn** trực quan, chạm 1 chạm để đổi trạng thái bàn (`SEATED` / `CLEANING`) hoặc gộp bàn cho đoàn đông.
 * **Hỗ trợ đặt trước món ăn (Pre-order Signature Menu):** Khách có thể đặt cọc bàn kèm đặt trước các món cao cấp (Steak bò Mỹ, Rượu vang) để bếp chuẩn bị chu đáo trước khi khách đến.
 
 ---
@@ -233,26 +233,26 @@ Thay vì phải phụ thuộc vào các nền tảng trung gian đại trà (Pas
 +--------------------------+----------------------------+----------------------------+
 | MODULE 1: CUSTOMER APP   | MODULE 2: FLOOR HOST POS   | MODULE 3: MOBILE WAITSTAFF |
 | (Dành cho Thực khách)    | (Dành cho Lễ tân & Thu ngân| (Dành cho Phục vụ sàn)     |
-| - Đặt bàn trực tuyến (>=2)| - Màn hình Tablet trực quan| - Chọn bàn phục vụ nhanh   |
-| - Tương tác sơ đồ 2D live| - Quét QR Check-in tức thì | - Gọi món theo danh mục    |
+| - Đặt bàn trực tuyến (>=2)| - Màn hình Tablet Thẻ Box  | - Chọn bàn phục vụ nhanh   |
+| - Đặt theo thông tin & ca| - Quét QR Check-in tức thì | - Gọi món theo danh mục    |
 | - Giữ bàn 5p Redlock     | - Xếp khách vãng lai cấp tốc| - Tự nhập món riêng/phụ thu|
-| - Cọc VietQR & Email vé  | - Chuyển bàn & Ghép bàn    | - Chuyển & ghép bàn mobile |
+| - Cọc VietQR & Email vé  | - Chuyển bàn & Gộp bàn Box | - Chuyển & ghép bàn mobile |
 | - Escrow tạm giữ an toàn | - Thanh toán trừ cọc tự động| - Bắn order về KDS Bếp     |
 +--------------------------+----------------------------+----------------------------+
-| MODULE 4: FLOOR BUILDER (Trình vẽ kéo-thả bàn, vách ngăn, cấu hình đa tầng)        |
+| MODULE 4: TABLE MANAGEMENT (Quản lý danh mục Thẻ Box bàn, phân khu đa tầng)        |
 | MODULE 5: ANALYTICS & ADMIN (Báo cáo lấp đầy RevPASH, Đối soát giải ngân tiền cọc) |
 +------------------------------------------------------------------------------------+
 ```
 
 * **FR-01 (Tìm kiếm & Lọc bàn trống Online - Tối thiểu 2 khách):** Lọc theo ngày, khung ca và số người. Quy định đặt bàn trực tuyến nhận từ **2 khách trở lên** ($\ge 2$) nhằm tối ưu hóa công suất bàn ăn.
-* **FR-02 (Xem sơ đồ 2D tương tác):** Render sơ đồ mặt bằng trực quan bằng Canvas/Konva.js: zoom, pan, hiển thị rõ ràng màu sắc trạng thái từng bàn theo thời gian thực.
-* **FR-03 (Khóa giữ chỗ thời gian thực):** Click chọn bàn $\rightarrow$ Backend kích hoạt Redis Distributed Lock $\rightarrow$ Đổi trạng thái bàn sang `HOLDING` trong 5 phút.
+* **FR-02 (Đặt bàn theo Thông tin & Khu vực):** Khách chọn ngày, ca giờ, số khách, loại không gian Zone (Ban công, Bar, VIP, Cạnh cửa kính) và nhận trạng thái khả dụng thời gian thực.
+* **FR-03 (Khóa giữ chỗ thời gian thực):** Bấm giữ chỗ $\rightarrow$ Backend kích hoạt Redis Distributed Lock $\rightarrow$ Đổi trạng thái bàn sang `HOLDING` trong 5 phút.
 * **FR-04 (Thanh toán cọc tự động & Tạm giữ Escrow):** Sinh mã VietQR động; lắng nghe webhook thanh toán để chuyển đơn sang `CONFIRMED`, tự động gửi Email vé điện tử và lưu tiền cọc vào tài khoản tạm giữ.
-* **FR-05 (Điều phối sàn & Thanh toán trên Tablet POS):** Lễ tân/Thu ngân chạm 1 chạm để đổi trạng thái bàn, xếp khách vãng lai, tự nhập món ngoài menu, tính phụ thu, khấu trừ tiền cọc đã thanh toán và in biên lai.
+* **FR-05 (Điều phối sàn & Thanh toán trên Tablet POS):** Lễ tân/Thu ngân chạm 1 chạm để đổi trạng thái bàn trên Thẻ Box, xếp khách vãng lai, tự nhập món ngoài menu, tính phụ thu, khấu trừ tiền cọc đã thanh toán và in biên lai.
 * **FR-06 (Check-in bằng Camera):** Quét mã QR trên vé đặt bàn của khách để tự động load thông tin đặt trước, món ăn và cọc vào bàn.
-* **FR-07 (Trình vẽ mặt bằng kéo thả):** Cho phép chủ quán kéo thả bàn tròn, bàn vuông, tường, cửa sổ, quầy bar lên lưới tọa độ và lưu dưới dạng JSONB.
+* **FR-07 (Quản lý Danh mục Bàn dạng Thẻ Box):** Cho phép chủ quán cấu hình danh mục bàn (Mã bàn, Sức chứa, Tiền cọc riêng, Bật/Tắt bảo trì) theo từng tầng lầu và khu vực.
 * **FR-08 (Tự động giải phóng bàn quá hạn & Phạt No-Show):** Worker ngầm tự động nhả bàn sau 5 phút nếu chưa cọc, và tự động chuyển sang `NO_SHOW` phạt cọc sau 15 phút trễ hẹn.
-* **FR-09 (Cơ chế Chuyển Bàn & Ghép Bàn):** Hỗ trợ chuyển bàn trọn vẹn (toàn bộ món + cọc chuyển sang bàn mới, bàn cũ về trống) và ghép bàn / gộp hóa đơn (cộng dồn số lượng món & tiền cọc).
+* **FR-09 (Cơ chế Chuyển Bàn & Ghép / Gộp Bàn):** Hỗ trợ chuyển bàn trọn vẹn (toàn bộ món + cọc chuyển sang bàn mới, bàn cũ về trống) và ghép / gộp nhiều Box bàn (cộng dồn số lượng món & tiền cọc cho đoàn đông).
 * **FR-10 (App Di Động Cho Nhân Viên Phục Vụ):** Ứng dụng di động tối ưu cho nhân viên order tại bàn, gửi đơn về Bếp & Thu ngân tức thời.
 
 ---

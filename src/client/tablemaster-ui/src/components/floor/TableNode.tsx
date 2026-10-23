@@ -36,7 +36,7 @@ export const TableNode: React.FC<TableNodeProps> = ({
     switch (table.status) {
       case 'AVAILABLE':
         return isSelected
-          ? 'bg-emerald-100 text-emerald-900 border-emerald-500 ring-4 ring-emerald-400/40 shadow-lg'
+          ? 'bg-gradient-to-br from-amber-50 via-amber-100 to-amber-50 text-amber-950 border-amber-500 ring-4 ring-amber-400/50 shadow-xl shadow-amber-500/25 scale-105 z-20'
           : 'bg-emerald-50 text-emerald-800 border-emerald-400 hover:border-emerald-600 hover:bg-emerald-100/80 shadow-sm';
       case 'HOLDING':
         return 'bg-amber-50 text-amber-800 border-amber-400 shadow-md ring-2 ring-amber-400/50';
@@ -154,13 +154,19 @@ export const TableNode: React.FC<TableNodeProps> = ({
         </div>
       )}
 
-      {/* Selected Indicator Glow */}
+      {/* Selected Indicator Glow & Badge */}
       {isSelected && (
-        <div
-          className={`absolute -inset-1 rounded-${
-            isCircle ? 'full' : '2xl'
-          } bg-amber-500/20 blur-sm pointer-events-none animate-pulse`}
-        />
+        <>
+          <div
+            className={`absolute -inset-1 rounded-${
+              isCircle ? 'full' : '2xl'
+            } bg-amber-500/25 blur-sm pointer-events-none animate-pulse`}
+          />
+          <div className="absolute -top-7 left-1/2 -translate-x-1/2 whitespace-nowrap bg-gradient-to-r from-amber-500 to-amber-600 text-slate-950 text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full shadow-lg border border-amber-300 flex items-center gap-1 z-30 animate-bounce">
+            <Sparkles className="w-2.5 h-2.5 fill-slate-950 text-slate-950" />
+            <span>Bạn Chọn</span>
+          </div>
+        </>
       )}
 
       {/* Main Table Body */}

@@ -1,11 +1,11 @@
 # TÀI LIỆU THIẾT KẾ KIẾN TRÚC HỆ THỐNG TỔNG THỂ (MASTER SYSTEM DESIGN BLUEPRINT)
-# HỆ THỐNG: TABLEMASTER – NỀN TẢNG ĐẶT BÀN & ĐIỀU PHỐI MẶT BẰNG 2D THỜI GIAN THỰC
+# HỆ THỐNG: TABLEMASTER – NỀN TẢNG ĐẶT BÀN & QUẢN LÝ BÀN ĂN NHÀ HÀNG
 ## (TÀI LIỆU QUY CHUẨN KỸ THUẬT DÀNH CHO TOÀN BỘ 5 THÀNH VIÊN DỰ ÁN)
 
 > **Mã tài liệu:** MASTER-ARCH-SPEC-01  
-> **Phiên bản:** 3.0.0 (Bản quy chuẩn thống nhất toàn diện)  
+> **Phiên bản:** 3.1.0 (Quy chuẩn chuẩn hóa: Bỏ 2D/3D Canvas, Đặt bàn theo Thông tin, Quản lý Thẻ Box Bàn & Gộp bàn)  
 > **Loại tài liệu:** Master System Architecture, Database Schemas, API Contract & Team Blueprint  
-> **Tech Stack:** Spring Boot 3.x, Spring Cloud Gateway, Netflix Eureka, PostgreSQL 16 (Database-per-Service), Redis 7.2 (Redlock), Apache Kafka, React 18 / Next.js, Konva.js 2D Canvas, WebSocket STOMP, VietQR.
+> **Tech Stack:** Spring Boot 3.x, Spring Cloud Gateway, Netflix Eureka, PostgreSQL 16 (Database-per-Service), Redis 7.2 (Redlock), Apache Kafka, React 18 (Dashboard Box Grid UI), WebSocket STOMP, VietQR.
 
 ---
 
@@ -40,7 +40,7 @@ Dự án **TableMaster** là sản phẩm phần mềm gia công đóng gói chu
 ## 2. 5 NGUYÊN TẮC THIẾT KẾ CỐT LÕI (CORE PRINCIPLES)
 
 * 🎯 **Nguyên tắc 1 (Hybrid Identity):** Thực khách đặt bàn 1-chạm **không cần đăng ký mật khẩu**, hệ thống tự động làm sạch SĐT chuẩn **E.164** và tích điểm VIP ngầm. Nhân viên nội bộ bắt buộc đăng nhập bảo mật bằng **JWT + Refresh Token đa thiết bị + Redis Blacklist**.
-* 🎯 **Nguyên tắc 2 (Real-time Zone Availability & Bàn cố định):** Vị trí bàn cố định trên sơ đồ 2D (Admin quản lý bảng CRUD, không làm builder phức tạp). Hệ thống tính toán và hiển thị tình trạng bàn trống theo thời gian thực cho từng khu vực (`OUTDOOR`, `BAR_COUNTER`, `PRIVATE_VIP`, `WINDOW_VIEW`, `STANDARD`). Nếu hết bàn ngoài trời $\rightarrow$ Khóa và báo đỏ [FULL].
+* 🎯 **Nguyên tắc 2 (Real-time Zone Availability & Quản lý Thẻ Box Bàn):** Bỏ mô hình đồ họa 2D/3D phức tạp; Khách hàng đặt bàn dựa trên **thông tin cung cấp** (Ngày, Giờ, Số khách, Khu vực mong muốn). Nhân viên quản lý bàn trực quan dạng **Thẻ Box Bàn (Box Grid Cards)**, hỗ trợ đổi trạng thái và gộp bàn linh hoạt. Hệ thống tính toán và hiển thị tình trạng bàn trống theo thời gian thực cho từng khu vực (`OUTDOOR`, `BAR_COUNTER`, `PRIVATE_VIP`, `WINDOW_VIEW`, `STANDARD`). Nếu hết bàn khu vực $\rightarrow$ Khóa và báo đỏ [FULL].
 * 🎯 **Nguyên tắc 3 (Telesales Verification & Vé QR Email):** Khách gửi đơn web (`PENDING_REVIEW`) $\rightarrow$ Lễ tân gọi điện tư vấn chốt đơn $\rightarrow$ Gửi link cọc VietQR (`AWAITING_PAYMENT`) $\rightarrow$ Khách cọc xong $\rightarrow$ Phát hành **Vé điện tử có mã QR qua Email** (`CONFIRMED`) $\rightarrow$ Quét Camera QR vào bàn (`SEATED`) $\rightarrow$ Hoàn tất bill (`COMPLETED`).
 * 🎯 **Nguyên tắc 4 (Direct VietQR & Webhook Idempotency):** Sinh mã VietQR động theo chuẩn Napas247, đối soát biến động số dư qua Webhook trong 1 giây có chữ ký số HMAC-SHA256 và chống xử lý trùng.
 * 🎯 **Nguyên tắc 5 (Database-per-Service & Async BI Analytics):** 5 Database PostgreSQL độc lập cho 5 Microservice. Số liệu báo cáo doanh thu, RevPASH và Heatmap bàn Hot được tổng hợp bất đồng bộ qua **Kafka Events**, không làm nghẽn luồng đặt bàn thời gian thực.
@@ -59,8 +59,8 @@ skinparam shadowing false
 title KIẾN TRÚC TỔNG THỂ HỆ THỐNG MICROSERVICES (TABLEMASTER)
 
 package "CLIENT APPS LAYER" {
-  [Web Đặt Bàn 2D (Khách hàng)] as ClientWeb #E8F5E9
-  [Tablet Lễ Tân Sảnh (Host App)] as HostTablet #E3F2FD
+  [Web Đặt Bàn Trực Tuyến (Khách hàng)] as ClientWeb #E8F5E9
+  [Tablet Lễ Tân Sảnh (Host App - Box Grid)] as HostTablet #E3F2FD
   [Mobile App Phục Vụ (Waiter App)] as WaiterApp #FFF3E0
   [Admin Dashboard (Chủ Quán / Quản Lý)] as AdminWeb #F3E5F5
 }
@@ -426,8 +426,8 @@ TableMaster/
 │   └── analytics-service/               # Member 5: Analytics & BI (Port: 8085)
 │
 └── frontend/                            # Giao diện người dùng
-    ├── customer-web/                    # Web đặt bàn 2D cho Khách hàng (Next.js)
-    ├── staff-tablet-app/                # App iPad Lễ tân sảnh & Phục vụ (React Konva)
+    ├── customer-web/                    # Web đặt bàn theo thông tin cho Khách hàng
+    ├── staff-tablet-app/                # App Tablet Lễ tân sảnh & Phục vụ (Table Box Grid)
     └── admin-dashboard/                 # Quản trị & Báo cáo doanh thu cho Chủ quán
 ```
 
@@ -443,15 +443,15 @@ TableMaster/
                          ▼
 [ TUẦN 2: PHÁT TRIỂN ĐỘC LẬP TỪNG SERVICE (5 THÀNH VIÊN) ]
 - Member 1: Auth JWT & E.164 Validator.
-- Member 2: CRUD Floor 2D JSONB & Zone Availability API.
-- Member 3: Booking State Machine & Ghép bàn.
+- Member 2: CRUD Quản lý Box Bàn & Zone Availability API.
+- Member 3: Booking State Machine & Ghép/Gộp bàn.
 - Member 4: Sinh mã VietQR & Webhook HMAC.
 - Member 5: Consumer Kafka & Công thức tính RevPASH.
                          │
                          ▼
 [ TUẦN 3: TÍCH HỢP LIÊN DỊCH VỤ & WEBSOCKET REAL-TIME ]
 - Kết nối luồng: Đặt bàn -> Lễ tân gọi chốt -> Cọc VietQR -> Sinh Vé QR Email.
-- Bật WebSocket STOMP đổi màu bàn thời gian thực trên Canvas.
+- Bật WebSocket STOMP đổi màu Thẻ Box bàn thời gian thực trên giao diện Tablet.
                          │
                          ▼
 [ TUẦN 4: TEST TOÀN DIỆN, BẢO MẬT & BẢO VỆ ĐỒ ÁN ]

@@ -1,6 +1,6 @@
 # TÀI LIỆU THIẾT KẾ CƠ SỞ DỮ LIỆU (BOOKING SERVICE)
 # DỊCH VỤ: BOOKING & DISPATCH SERVICE (`tablemaster_booking`)
-## HỆ THỐNG: TABLEMASTER – NỀN TẢNG ĐẶT BÀN & ĐIỀU PHỐI MẶT BẰNG 2D
+## HỆ THỐNG: TABLEMASTER – NỀN TẢNG ĐẶT BÀN & QUẢN LÝ BÀN ĂN NHÀ HÀNG
 
 > **Mã tài liệu:** DB-SPEC-BOOK-01  
 > **Phiên bản:** 2.1.0 (Quy trình Telesales Gọi điện Xác nhận, Gửi Link Cọc & Vé QR Email)  

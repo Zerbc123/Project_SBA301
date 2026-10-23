@@ -54,6 +54,18 @@ public class TableEntity {
     @Builder.Default
     private Float posY = 100.0f;
 
+    @Column(name = "width", nullable = false)
+    @Builder.Default
+    private Float width = 80.0f;
+
+    @Column(name = "height", nullable = false)
+    @Builder.Default
+    private Float height = 80.0f;
+
+    @Column(name = "rotation", nullable = false)
+    @Builder.Default
+    private Float rotation = 0.0f;
+
     @Column(name = "shape", nullable = false, length = 20)
     @Builder.Default
     private String shape = "RECT";

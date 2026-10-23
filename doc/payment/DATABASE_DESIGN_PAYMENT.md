@@ -1,6 +1,6 @@
 # TÀI LIỆU THIẾT KẾ CƠ SỞ DỮ LIỆU (PAYMENT SERVICE)
 # DỊCH VỤ: PAYMENT & TRANSACTION SERVICE (`tablemaster_payment`)
-## HỆ THỐNG: TABLEMASTER – NỀN TẢNG ĐẶT BÀN & ĐIỀU PHỐI MẶT BẰNG 2D
+## HỆ THỐNG: TABLEMASTER – NỀN TẢNG ĐẶT BÀN & QUẢN LÝ BÀN ĂN NHÀ HÀNG
 
 > **Mã tài liệu:** DB-SPEC-PAY-01  
 > **Phiên bản:** 2.1.0 (Bản đặc tả Thanh toán VietQR Trực tiếp, Xử lý Webhook & Hoàn Cọc)  

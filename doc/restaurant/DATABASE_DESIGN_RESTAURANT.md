@@ -1,11 +1,11 @@
 # TÀI LIỆU THIẾT KẾ CƠ SỞ DỮ LIỆU (RESTAURANT SERVICE)
 # DỊCH VỤ: RESTAURANT & FLOOR SERVICE (`tablemaster_restaurant`)
-## HỆ THỐNG: TABLEMASTER – NỀN TẢNG ĐẶT BÀN & ĐIỀU PHỐI MẶT BẰNG 2D
+## HỆ THỐNG: TABLEMASTER – NỀN TẢNG ĐẶT BÀN & QUẢN LÝ BÀN ĂN NHÀ HÀNG
 
 > **Mã tài liệu:** DB-SPEC-REST-01  
-> **Phiên bản:** 2.1.0 (Bổ sung Real-time Zone/Table-Type Availability & Tinh gọn Bàn cố định)  
+> **Phiên bản:** 2.2.0 (Chuẩn hóa: Bỏ 2D/3D Canvas, Đặt bàn theo Thông tin Khách hàng, Quản lý Thẻ Box Bàn & Gộp Bàn)  
 > **Hệ quản trị CSDL:** PostgreSQL 16+ & Redis 7.2  
-> **Đặc tả kiến trúc:** Quản lý Hồ sơ quán, Sơ đồ Đa tầng 2D (JSONB), Vị trí không gian Real-time (Outdoor, Bar, Private VIP, Window View), Ca phục vụ cố định & Thực đơn đặt trước.
+> **Đặc tả kiến trúc:** Quản lý Hồ sơ quán, Phân khu Tầng lầu, Vị trí không gian Real-time (Outdoor, Bar, Private VIP, Window View), Ca phục vụ cố định, Thực đơn đặt trước & Giao diện Thẻ Box Bàn hỗ trợ Gộp bàn linh hoạt.
 
 ---
 
@@ -15,7 +15,7 @@
 3. [ĐẶC TẢ CHI TIẾT CÁC BẢNG DỮ LIỆU (POSTGRESQL DDL)](#3-đặc-tả-chi-tiết-các-bảng-dữ-liệu-postgresql-ddl)
    * [3.1. Bảng `restaurant_profile` (Hồ sơ quán & Cấu hình Ngân hàng)](#31-bảng-restaurant_profile-hồ-sơ-quán--cấu-hình-ngân-hàng)
    * [3.2. Bảng `time_slots` (Khung giờ / Ca phục vụ cố định)](#32-bảng-time_slots-khung-giờ--ca-phục-vụ-cố-định)
-   * [3.3. Bảng `floor_plans` (Mặt bằng các tầng & JSONB Kiến trúc tĩnh)](#33-bảng-floor_plans-mặt-bằng-các-tầng--jsonb-kiến-trúc-tĩnh)
+   * [3.3. Bảng `floor_plans` (Mặt bằng các tầng & Danh mục khu vực)](#33-bảng-floor_plans-mặt-bằng-các-tầng--danh-mục-khu-vực)
    * [3.4. Bảng `tables` (Bàn ăn vật lý & Phân loại Không gian)](#34-bảng-tables-bàn-ăn-vật-lý--phân-loại-không-gian)
    * [3.5. Bảng `menu_categories` & `menu_items` (Thực đơn đặt trước)](#35-bảng-menu_categories--menu_items-thực-đơn-đặt-trước)
 4. [CƠ CHẾ TÍNH TOÁN REAL-TIME ZONE AVAILABILITY](#4-cơ-chế-tính-toán-real-time-zone-availability)
@@ -27,14 +27,19 @@
 
 ## 1. BỐI CẢNH & TRIẾT LÝ THIẾT KẾ KHÔNG GIAN BÀN
 
-### 1.1. Tinh gọn Quản trị Bàn ăn (Không làm Drag & Drop Builder phức tạp)
-* Tại nhà hàng thực tế, vị trí bàn sau khi setup nội thất là **cố định**.
-* Admin quản lý bàn theo **danh mục bảng CRUD tiêu chuẩn** (Mã bàn, Loại không gian, Sức chứa ghế, Giá cọc, Bật/Tắt bảo trì `is_active`).
-* Bỏ qua tính năng kéo thả xoay bàn phức tạp giúp giảm 70% độ phức tạp của Frontend Canvas.
+### 1.1. Tinh gọn Quản trị Bàn ăn: Quản lý Thẻ Box Bàn & Gộp bàn (Không dùng 2D/3D Canvas)
+* **Bỏ hoàn toàn mô hình vẽ sơ đồ 2D/3D phức tạp:** Tại nhà hàng thực tế, vị trí bàn ăn là cố định và đã được bố trí sẵn theo mặt bằng các tầng. Việc dựng canvas 2D/3D kéo-thả vừa gây nặng nề cho thiết bị di động/tablet, vừa không cần thiết cho nghiệp vụ thực tế.
+* **Giao diện Quản trị Thẻ Box Bàn (Table Box Cards / Grid):**
+  * Nhân sự (Admin, Lễ tân Host, Thu ngân) quản lý bàn thông qua **lưới các Box Bàn trực quan** phân chia theo từng Tầng / Khu vực.
+  * Mỗi Box hiển thị rõ: Mã bàn (T1-01, VIP-02...), Sức chứa (2-4 chỗ), Trạng thái màu sắc (Xanh: Trống, Vàng: Đang ngồi, Đỏ: Đã xác nhận cọc, Xám: Đang dọn).
+  * Hỗ trợ thao tác 1 chạm ngay trên Box: Mở bàn, Đổi trạng thái, Chuyển bàn, và **Gộp bàn (Ghép 2 hay nhiều Box bàn lại với nhau)** khi khách đi đoàn đông.
+* **Luồng Đặt bàn phía Khách hàng (Data-driven Booking):**
+  * Khách hàng **không cần chọn vị trí trên bản đồ 2D/3D**.
+  * Khách đặt bàn đơn giản và nhanh chóng dựa trên **Thông tin cung cấp**: Chọn Ngày, Khung giờ (Time Slot), Số lượng người, Loại không gian mong muốn (`zone_type` như Ban công, Phòng VIP, Cạnh cửa kính...), ghi chú nhu cầu đặc biệt và chọn món ăn đặt trước.
 
 ### 1.2. Cơ chế Real-time Availability theo Vị trí & Loại không gian (`zone_type`)
 * Khách hàng đặt bàn luôn quan tâm đến loại trải nghiệm không gian:
-  * `OUTDOOR`: Ban công ngoài trời, thoáng đãng ngắm phố.
+  * `OUTDOOR`: Ban công / Sân vườn ngoài trời, thoáng đãng ngắm phố.
   * `BAR_COUNTER`: Quầy bar pha chế, phong cách hiện đại.
   * `PRIVATE_VIP`: Phòng kín riêng tư tiếp đối tác / tiệc gia đình.
   * `WINDOW_VIEW`: Bàn cạnh cửa kính lớn ngắm hoàng hôn / đường phố.

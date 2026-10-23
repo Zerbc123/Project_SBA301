@@ -1,10 +1,10 @@
 # TÀI LIỆU THIẾT KẾ CƠ SỞ DỮ LIỆU CHUYÊN BIỆT (DATABASE ARCHITECTURE SPECIFICATION)
-# HỆ THỐNG: TABLEMASTER – NỀN TẢNG ĐẶT BÀN & ĐIỀU PHỐI MẶT BẰNG 2D THỜI GIAN THỰC
+# HỆ THỐNG: TABLEMASTER – NỀN TẢNG ĐẶT BÀN & QUẢN LÝ BÀN ĂN NHÀ HÀNG
 ## (DỰ ÁN OUTSOURCE GIA CÔNG ĐỘC QUYỀN CHO NHÀ HÀNG CAO CẤP)
 
 > **Mô hình triển khai:** Single-Tenant (Phần mềm đóng gói / Outsource chuyên biệt cho 01 thương hiệu Nhà hàng cụ thể).  
 > **Hệ quản trị CSDL:** PostgreSQL 16+ (Database-per-Service + JSONB), Redis Cluster 7.2 (In-memory Cache & Redlock).  
-> **Đặc thù nghiệp vụ:** Quản lý đa tầng (Tầng trệt, Phòng VIP, Rooftop ngoài trời), hỗ trợ đặt trước món ăn (Pre-order menu), thanh toán cọc VietQR trực tiếp về tài khoản chủ quán, đồng bộ màn hình Tablet Lễ tân sàn theo thời gian thực.
+> **Đặc thù nghiệp vụ:** Quản lý đa tầng (Tầng trệt, Phòng VIP, Rooftop ngoài trời), hỗ trợ đặt trước món ăn (Pre-order menu), thanh toán cọc VietQR trực tiếp về tài khoản chủ quán, đồng bộ màn hình Tablet Lễ tân sàn theo dạng Thẻ Box Bàn trực quan.
 
 ---
 
@@ -17,7 +17,7 @@
    * [3.3. Database: tablemaster_booking (Đơn đặt bàn, Ghép bàn & Transactional Outbox)](#33-database-tablemaster_booking-đơn-đặt-bàn-ghép-bàn--transactional-outbox)
    * [3.4. Database: tablemaster_payment (Giao dịch VietQR & Webhook trực tiếp)](#34-database-tablemaster_payment-giao-dịch-vietqr--webhook-trực-tiếp)
    * [3.5. Database: tablemaster_analytics (Báo cáo doanh thu, RevPASH & Khách VIP)](#35-database-tablemaster_analytics-báo-cáo-doanh-thu-revpash--khách-vip)
-4. [ĐẶC TẢ CẤU TRÚC JSONB MẶT BẰNG 2D (FLOOR PLAN METADATA)](#4-đặc-tả-cấu-trúc-jsonb-mặt-bằng-2d-floor-plan-metadata)
+4. [ĐẶC TẢ CẤU TRÚC JSONB PHÂN KHU & METADATA BÀN ĂN](#4-đặc-tả-cấu-trúc-jsonb-phân-khu--metadata-bàn-ăn)
 5. [THIẾT KẾ CẤU TRÚC DỮ LIỆU REDIS (IN-MEMORY DATA STRUCTURES)](#5-thiết-kế-cấu-trúc-dữ-liệu-redis-in-memory-data-structures)
 6. [TỐI ƯU HIỆU NĂNG TRUY VẤN BÀN TRỐNG (INDEXING STRATEGY)](#6-tối-ưu-hiệu-năng-truy-vấn-bàn-trống-indexing-strategy)
 7. [SCRIPT KHỞI TẠO TỰ ĐỘNG DOCKER COMPOSE](#7-script-khởi-tạo-tự-động-docker-compose)
@@ -553,9 +553,9 @@ CREATE INDEX idx_vip_tier_spent ON vip_customer_insights(loyalty_tier, total_spe
 
 ---
 
-## 4. ĐẶC TẢ CẤU TRÚC JSONB MẶT BẰNG 2D (FLOOR PLAN METADATA)
+## 4. ĐẶC TẢ CẤU TRÚC JSONB PHÂN KHU & METADATA BÀN ĂN
 
-Cột `layout_metadata` trong bảng `floor_plans` lưu toàn bộ tọa độ đồ họa của tầng tương ứng:
+Cột `layout_metadata` trong bảng `floor_plans` lưu cấu hình phân khu và tiện ích tĩnh của tầng:
 
 ```json
 {

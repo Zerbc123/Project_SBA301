@@ -5,7 +5,7 @@
 > **Mã tài liệu:** SRS-UC-FULL-TABLEMASTER-01  
 > **Phiên bản:** 2.0.0 (Bản phân tích toàn diện chuẩn công nghiệp)  
 > **Loại tài liệu:** Software Requirements Specification (SRS) & Use Case Catalog  
-> **Công nghệ:** Microservices Spring Boot 3.x (Gateway, Eureka, Kafka, Redis Redlock), PostgreSQL 16 (JSONB), React Konva.js, WebSocket STOMP, VietQR.
+> **Công nghệ:** Microservices Spring Boot 3.x (Gateway, Eureka, Kafka, Redis Redlock), PostgreSQL 16 (JSONB), React Dashboard & Box Grid UI, WebSocket STOMP, VietQR.
 
 ---
 
@@ -13,14 +13,14 @@
 1. [TỔNG QUAN BÀI TOÁN QUẢN TRỊ BOOKING NHÀ HÀNG THỰC TẾ](#1-tổng-quan-bài-toán-quản-trị-booking-nhà-hàng-thực-tế)
 2. [HỆ THỐNG TÁC NHÂN (ACTOR MODEL & RESPONSIBILITY MATRIX)](#2-hệ-thống-tác-nhân-actor-model--responsibility-matrix)
 3. [SƠ ĐỒ TỔNG THỂ USE CASE (SYSTEM-WIDE USE CASE DIAGRAMS)](#3-sơ-đồ-tổng-thể-use-case-system-wide-use-case-diagrams)
-4. [MA TRẬN PHÂN RÃ CHỨC NĂNG CHI TIẾT (10 PHÂN HỆ NGHIỆP VỤ)](#4-ma-trận-phân-rã-chức-năng-chi-tiết-10-phân-hệ-nghiệp-vụ)
+4. [MA TRẬN PHÂN RÃ CHỨC NĂNG CHI TIẾT (10 PHÂN HỆ TÍNH NĂNG ÁNH XẠ 5 MICROSERVICES)](#4-ma-trận-phân-rã-chức-năng-chi-tiết-10-phân-hệ-nghiệp-vụ)
    * [Module 1: Định danh, Tài khoản & Thành viên VIP (Auth & Loyalty)](#module-1-định-danh-tài-khoản--thành-viên-vip-auth--loyalty)
    * [Module 2: Khám phá Không gian & Thực đơn số (Experience & Menu Catalog)](#module-2-khám-phá-không-gian--thực-đơn-số-experience--menu-catalog)
-   * [Module 3: Đặt bàn Sơ đồ 2D & Đặt món trước (Interactive 2D Booking Engine)](#module-3-đặt-bàn-sơ-đồ-2d--đặt-món-trước-interactive-2d-booking-engine)
+   * [Module 3: Đặt bàn Theo Thông tin & Chọn Món trước (Data-driven Booking Engine)](#module-3-đặt-bàn-sơ-đồ-2d--đặt-món-trước-interactive-2d-booking-engine)
    * [Module 4: Đặt tiệc Sự kiện & Yêu cầu Đặc biệt (Private Banquet & Special Events)](#module-4-đặt-tiệc-sự-kiện--yêu-cầu-đặc-biệt-private-banquet--special-events)
    * [Module 5: Thanh toán Cọc, VietQR & Hóa đơn (Payment, Webhook & Invoicing)](#module-5-thanh-toán-cọc-vietqr--hóa-đơn-payment-webhook--invoicing)
-   * [Module 6: Lễ tân Sảnh & Điều phối Tablet (Host Dispatch & Floor Management)](#module-6-lễ-tân-sảnh--điều-phối-tablet-host-dispatch--floor-management)
-   * [Module 7: Trình vẽ Mặt bằng Đa tầng (2D Canvas Floor Plan Builder)](#module-7-trình-vẽ-mặt-bằng-đa-tầng-2d-canvas-floor-plan-builder)
+   * [Module 6: Lễ tân Sảnh & Điều phối Tablet Box Bàn (Host Dispatch & Table Box Management)](#module-6-lễ-tân-sảnh--điều-phối-tablet-host-dispatch--floor-management)
+   * [Module 7: Quản lý Bàn ăn & Phân khu Tầng lầu (Floor & Table Grid Management)](#module-7-trình-vẽ-mặt-bằng-đa-tầng-2d-canvas-floor-plan-builder)
    * [Module 8: Quản trị Thực đơn, Khung ca & Biểu phí (Menu & Shift Operations)](#module-8-quản-trị-thực-đơn-khung-ca--biểu-phí-menu--shift-operations)
    * [Module 9: Báo cáo Doanh thu, RevPASH & Phân tích Sàn (Analytics & BI)](#module-9-báo-cáo-doanh-thu-revpash--phân-tích-sàn-analytics--bi)
    * [Module 10: Thông báo Đa kênh & Chăm sóc Khách hàng (CRM & Notifications)](#module-10-thông-báo-đa-kênh--chăm-sóc-khách-hàng-crm--notifications)
@@ -36,21 +36,21 @@ Một hệ thống quản lý đặt bàn nhà hàng chuyên nghiệp **không c
 
 ```
 [ GIAI ĐOẠN 1: TRƯỚC BỮA ĂN (PRE-DINING) ]
-Khách chọn không gian qua Sơ đồ 2D -> Khóa bàn 5p chống tranh chấp -> Đặt trước món đắt tiền (Wagyu, Rượu)
+Khách nhập thông tin đặt bàn & chọn khu vực (Zone) -> Khóa giữ chỗ 5p chống tranh chấp -> Đặt trước món đắt tiền (Wagyu, Rượu)
 -> Chuyển khoản cọc VietQR -> Nhận vé QR điện tử qua Email/App -> Nhắc lịch tự động trước 2h.
                            │
                            ▼
 [ GIAI ĐOẠN 2: LÚC KHÁCH ĐẾN (AT-ARRIVAL & CHECK-IN) ]
 Lễ tân dùng Tablet quét Camera QR nhận diện vé trong 1s -> Dẫn vào bàn -> Khách vãng lai xếp bàn nhanh
--> Xử lý khách đến trễ (Grace period 15p) -> Gợi ý ghép bàn khi phát sinh thêm người.
+-> Xử lý khách đến trễ (Grace period 15p) -> Gợi ý ghép/gộp bàn khi phát sinh thêm người.
                            │
                            ▼
 [ GIAI ĐOẠN 3: TRONG BỮA ĂN (DURING-SERVICE) ]
-Tablet cập nhật trạng thái: Đang ăn -> Gọi thanh toán bill -> Dọn bàn -> Bàn trống sẵn sàng đón ca sau.
+Tablet cập nhật trạng thái Thẻ Box: Đang ăn -> Gọi thanh toán bill -> Dọn bàn -> Bàn trống sẵn sàng đón ca sau.
                            │
                            ▼
 [ GIAI ĐOẠN 4: SAU BỮA ĂN (POST-DINING & ANALYTICS) ]
-Tích điểm thành viên VIP -> Khảo sát mức độ hài lòng (CSAT) -> Báo cáo doanh thu ca, RevPASH và Heatmap bàn.
+Tích điểm thành viên VIP -> Khảo sát mức độ hài lòng (CSAT) -> Báo cáo doanh thu ca, RevPASH và Phân tích bàn.
 ```
 
 ---
@@ -63,23 +63,23 @@ Tích điểm thành viên VIP -> Khảo sát mức độ hài lòng (CSAT) -> B
 +-------------------+--------------------+--------------------------------------------------------------+
 | TÁC NHÂN (ACTOR)  | LOẠI TÁC NHÂN      | QUYỀN HẠN & MỤC TIÊU SỬ DỤNG CHÍNH                           |
 +-------------------+--------------------+--------------------------------------------------------------+
-| 1. Customer       | Người dùng B2C     | Khách xem sơ đồ, tự chọn bàn, cọc VietQR, đặt món trước,     |
-|    (Thực khách)   | (Vãng lai hoặc VIP)| nhận vé QR, tra cứu lịch sử, đánh giá sau bữa ăn.            |
+| 1. Customer       | Người dùng B2C     | Khách đặt bàn theo thông tin (ngày, giờ, số người, khu vực), |
+|    (Thực khách)   | (Vãng lai hoặc VIP)| cọc VietQR, đặt món trước, nhận vé QR, tra cứu lịch sử đơn.   |
 +-------------------+--------------------+--------------------------------------------------------------+
-| 2. Floor Host     | Nhân sự vận hành   | Lễ tân sảnh dùng Tablet: Quét QR Check-in, xếp khách vãng    |
-|    (Lễ tân sảnh)  | (Host / Greeter)   | lai, đổi trạng thái bàn 1 chạm, thanh toán trừ cọc tự động.  |
+| 2. Floor Host     | Nhân sự vận hành   | Lễ tân sảnh dùng Tablet: Quét QR Check-in, quản lý Thẻ Box   |
+|    (Lễ tân sảnh)  | (Host / Greeter)   | bàn, xếp khách vãng lai, đổi trạng thái 1 chạm, gộp bàn.     |
 +-------------------+--------------------+--------------------------------------------------------------+
 | 3. Waitstaff      | Nhân sự phục vụ    | Nhân viên phục vụ bàn dùng App Mobile: Gọi món tại bàn,      |
 |    (Phục vụ bàn)  | (Mobile POS Staff) | tự nhập món riêng, ghi chú bếp, chuyển bàn & ghép bàn nhanh. |
 +-------------------+--------------------+--------------------------------------------------------------+
 | 4. Shift Manager  | Nhân sự điều hành  | Quản lý ca trực: Xử lý khiếu nại, duyệt hủy cọc theo chính   |
-|    (Quản lý ca)   | (Floor Supervisor) | sách, kích hoạt ghép bàn cho đoàn đông, khóa bàn khẩn cấp.   |
+|    (Quản lý ca)   | (Floor Supervisor) | sách, kích hoạt gộp bàn cho đoàn đông, khóa bàn khẩn cấp.    |
 +-------------------+--------------------+--------------------------------------------------------------+
 | 5. Head Chef / F&B| Nhân sự bếp        | Bếp trưởng / Bar: Nhận danh sách món đặt trước & order từ    |
 |    (Bếp / Bar)    | (Kitchen / Bar)    | phục vụ bàn để sơ chế, cập nhật trạng thái chế biến.         |
 +-------------------+--------------------+--------------------------------------------------------------+
-| 6. General Admin  | Ban giám đốc quán  | Chủ nhà hàng: Dựng sơ đồ tầng kéo-thả (Konva.js), cấu hình   |
-|    (Chủ / Quản trị|(Owner / Director)  | ca giờ, biểu phí cọc, quản lý menu, đối soát giải ngân cọc.  |
+| 6. General Admin  | Ban giám đốc quán  | Chủ nhà hàng: Quản lý danh mục Thẻ Box bàn & Gộp bàn,        |
+|    (Chủ / Quản trị|(Owner / Director)  | cấu hình ca giờ, biểu phí cọc, quản lý menu, đối soát cọc.   |
 +-------------------+--------------------+--------------------------------------------------------------+
 | 7. Bank & Escrow  | Cổng thanh toán    | PayOS/VietQR Webhook: Tự động xác thực cọc, giữ tiền trong   |
 |    (Cổng VietQR)  | (Auto Webhook)     | tài khoản tạm giữ và giải ngân khi hóa đơn hoàn tất.         |
@@ -105,9 +105,9 @@ flowchart LR
         UC03["UC-03: Xem Lịch sử & Hóa đơn cọc điện tử"]
     end
 
-    subgraph Sub_Booking ["Đặt bàn & Sơ đồ Mặt bằng 2D"]
-        UC04["UC-04: Tra cứu bàn trống theo Ca giờ & Số người"]
-        UC05["UC-05: Tương tác Sơ đồ 2D (Zoom, Pan, Xem View)"]
+    subgraph Sub_Booking ["Đặt bàn & Lựa chọn Không gian"]
+        UC04["UC-04: Tra cứu chỗ trống theo Ca giờ & Số người"]
+        UC05["UC-05: Đặt bàn theo Thông tin Khách hàng (Ngày, Giờ, Số khách, Khu vực)"]
         UC06["UC-06: Khóa giữ bàn tạm thời 5 phút (Redlock)"]
         UC07["UC-07: Chọn Món ăn Signature Đặt trước"]
         UC08["UC-08: Ghi chú Nhu cầu đặc biệt & Dị ứng thực phẩm"]
@@ -196,8 +196,8 @@ flowchart LR
     Admin(["fa:fa-crown Restaurant Owner<br>(Chủ quán / Admin)"])
     AutoWorker["fa:fa-gears System Engine<br>(Worker ngầm)"]
 
-    subgraph Sub_Builder ["Thiết kế Mặt bằng & Cấu hình"]
-        UC27["UC-27: Trình vẽ Mặt bằng kéo thả (Konva.js Builder)"]
+    subgraph Sub_Builder ["Quản lý Bàn ăn & Cấu hình"]
+        UC27["UC-27: Quản lý Thẻ Box Bàn & Thao tác Gộp bàn trực quan"]
         UC28["UC-28: Cấu hình Khung giờ & Công suất tối đa ca"]
         UC29["UC-29: Quản lý Thực đơn, Món ăn đặt trước & Giá cọc"]
         UC30["UC-30: Cấu hình Ngày lễ / Blackout dates & Biểu phí"]
@@ -239,9 +239,9 @@ flowchart LR
 | **2. Experience** | `FR-EXP-01` | Showcase Không gian Nhà hàng | Giới thiệu hình ảnh độ nét cao của từng tầng (Sảnh chính, Phòng VIP, Rooftop). | **P1 (Quan trọng)** |
 | | `FR-EXP-02` | Thực đơn Điện tử (Digital Menu) | Phân loại danh mục món, ảnh món ăn, giá bán, thành phần dị ứng, tag Best Seller. | **P0 (Bắt buộc)** |
 | | `FR-EXP-03` | Đánh giá & Phản hồi sau ăn | Khách gửi đánh giá 1-5 sao, viết nhận xét và upload hình ảnh sau bữa ăn. | **P1 (Quan trọng)** |
-| **3. 2D Booking** | `FR-BOOK-01` | Bộ lọc Tìm kiếm Bàn thông minh | Lọc theo Ngày, Khung ca, Số người lớn, Trẻ em (yêu cầu ghế em bé), Chọn tầng. | **P0 (Bắt buộc)** |
-| | `FR-BOOK-02` | Xem Sơ đồ 2D Tương tác Canvas | Render mặt bằng bằng Konva.js: Zoom, Pan, hiển thị trạng thái màu bàn thời gian thực. | **P0 (Bắt buộc)** |
-| | `FR-BOOK-03` | Khóa giữ bàn 5 phút (Redlock) | Bấm chọn bàn $\rightarrow$ Redis Redlock khóa bàn trong 100ms, bộ đếm ngược 05:00. | **P0 (Bắt buộc)** |
+| **3. Booking Engine** | `FR-BOOK-01` | Bộ lọc Tìm kiếm Chỗ thông minh | Lọc theo Ngày, Khung ca, Số người lớn, Trẻ em (yêu cầu ghế em bé), Chọn tầng. | **P0 (Bắt buộc)** |
+| | `FR-BOOK-02` | Đặt bàn theo Thông tin & Khu vực | Khách chọn Ngày, Khung giờ, Số khách, Loại không gian Zone (Ban công, Bar, VIP, Cửa kính). | **P0 (Bắt buộc)** |
+| | `FR-BOOK-03` | Khóa giữ bàn 5 phút (Redlock) | Bấm giữ bàn $\rightarrow$ Redis Redlock khóa bàn trong 100ms, bộ đếm ngược 05:00. | **P0 (Bắt buộc)** |
 | | `FR-BOOK-04` | Đặt trước Món ăn Signature | Chọn các món đặc biệt (Bò Wagyu A5, Set Rượu vang) trong cùng luồng cọc bàn. | **P1 (Quan trọng)** |
 | | `FR-BOOK-05` | Ghi chú Tiệc & Nhu cầu đặc biệt | Khách ghi chú: "Bàn kỷ niệm ngày cưới", "Yêu cầu setup nến thơm góc cửa sổ". | **P0 (Bắt buộc)** |
 | | `FR-BOOK-06` | Áp dụng Mã giảm giá (Promo Code) | Kiểm tra mã voucher hợp lệ, trừ tiền cọc trực tiếp trên hóa đơn tạm tính. | **P1 (Quan trọng)** |
@@ -252,24 +252,24 @@ flowchart LR
 | | `FR-PAY-03` | Phát hành Vé điện tử QR Check-in | Sinh mã QR bảo mật động gửi qua màn hình và Email của khách sau khi cọc xong. | **P0 (Bắt buộc)** |
 | | `FR-PAY-04` | Hủy đặt bàn & Hoàn cọc tự động | Xử lý hoàn tiền 100% nếu hủy trước 24h, hoàn 50% nếu hủy trước 6h theo ma trận. | **P1 (Quan trọng)** |
 | | `FR-PAY-05` | Yêu cầu Xuất Hóa đơn đỏ VAT | Nhập thông tin Mã số thuế, Tên công ty để xuất hóa đơn điện tử cho doanh nghiệp. | **P2 (Nâng cao)** |
-| **6. Host Dispatch** | `FR-DISP-01` | Màn hình Sơ đồ Sàn Live trên Tablet | Giao diện cảm ứng tối ưu cho iPad/Android Tablet xem toàn bộ bàn đa tầng. | **P0 (Bắt buộc)** |
+| **6. Host Dispatch** | `FR-DISP-01` | Màn hình Lưới Thẻ Box Bàn Live trên Tablet | Giao diện cảm ứng tối ưu cho iPad/Tablet hiển thị lưới các Box bàn theo tầng, trạng thái màu sắc. | **P0 (Bắt buộc)** |
 | | `FR-DISP-02` | Quét Camera QR Check-in đón khách | Quét mã QR trên điện thoại khách để đối soát đơn, chuyển trạng thái sang `SEATED`. | **P0 (Bắt buộc)** |
-| | `FR-DISP-03` | Đổi trạng thái bàn 1 chạm | Chạm vào bàn để chuyển đổi: `AVAILABLE` $\rightarrow$ `OCCUPIED` $\rightarrow$ `CLEANING`. | **P0 (Bắt buộc)** |
+| | `FR-DISP-03` | Đổi trạng thái bàn 1 chạm | Chạm vào Thẻ Box bàn để chuyển đổi: `AVAILABLE` $\rightarrow$ `OCCUPIED` $\rightarrow$ `CLEANING`. | **P0 (Bắt buộc)** |
 | | `FR-DISP-04` | Tiếp nhận Khách vãng lai (Walk-in) | Lễ tân tự nhập nhanh khách tại cửa vào bàn trống mà không cần thanh toán cọc. | **P0 (Bắt buộc)** |
 | | `FR-DISP-05` | Đổi bàn giữa chừng (Re-assignment) | Cho phép chuyển đoàn khách sang bàn khác theo yêu cầu khi bàn kia đang trống. | **P1 (Quan trọng)** |
-| | `FR-DISP-06` | Gợi ý & Ghép bàn thông minh | Thuật toán tính khoảng cách Euclidean giữa 2 bàn gần nhau để ghép phục vụ đoàn đông. | **P2 (Nâng cao)** |
+| | `FR-DISP-06` | Cơ chế Ghép / Gộp Box Bàn trực quan | Thao tác chọn 2 hay nhiều Thẻ Box bàn để gộp đơn, cộng dồn món và cọc cho đoàn đông. | **P0 (Bắt buộc)** |
 | | `FR-DISP-07` | Ghi chú Nội bộ ca trực | Lễ tân lưu ghi chú: "Bàn VIP hay uống rượu nặng", "Khách phàn nàn máy lạnh". | **P1 (Quan trọng)** |
-| **7. Floor Builder** | `FR-BLD-01` | Trình vẽ Canvas Kéo thả Bàn & Tường | Kéo thả bàn tròn, bàn vuông, quầy bar, cửa kính, vách tường lên lưới tọa độ 20px. | **P0 (Bắt buộc)** |
-| | `FR-BLD-02` | Bắt dính lưới & Xoay góc tự do | Hỗ trợ Snap to grid và xoay góc bàn $0^\circ - 360^\circ$ theo kiến trúc quán. | **P1 (Quan trọng)** |
-| | `FR-BLD-03` | Cấu hình Sức chứa & Phí cọc riêng | Đặt Min/Max ghế cho từng bàn và thiết lập phí cọc riêng cho các bàn đắc địa. | **P0 (Bắt buộc)** |
-| | `FR-BLD-04` | Quản lý Đa tầng lầu (Multi-floors) | Thêm tầng mới (Tầng 1, Tầng 2, Tầng 3), chỉnh sửa tên tầng, xuất bản sơ đồ mới. | **P0 (Bắt buộc)** |
+| **7. Table & Floor Mgmt** | `FR-BLD-01` | Quản lý Danh mục Bàn ăn dạng Box | Quản lý danh mục bàn theo bảng CRUD tiêu chuẩn (Mã bàn, Khu vực, Sức chứa, Tiền cọc). | **P0 (Bắt buộc)** |
+| | `FR-BLD-02` | Cấu hình Trạng thái & Bật/Tắt bảo trì | Bật/tắt trạng thái hoạt động của bàn, khóa bảo trì bàn hỏng hóc. | **P1 (Quan trọng)** |
+| | `FR-BLD-03` | Cấu hình Sức chứa & Phí cọc riêng | Đặt Min/Max ghế cho từng bàn và thiết lập phí cọc riêng cho các bàn VIP/đắc địa. | **P0 (Bắt buộc)** |
+| | `FR-BLD-04` | Quản lý Đa tầng lầu (Multi-floors) | Thêm tầng mới (Tầng 1, Tầng 2, Tầng 3), phân chia khu vực, xuất bản danh mục bàn. | **P0 (Bắt buộc)** |
 | **8. Operations** | `FR-OPER-01` | Quản lý Thực đơn & Trạng thái món | Thêm/sửa món ăn, bật tắt cờ hết hàng (Out of stock), cờ cho phép đặt trước. | **P0 (Bắt buộc)** |
 | | `FR-OPER-02` | Cấu hình Khung giờ (Time Slots) | Thiết lập ca trưa, ca tối, thời lượng mỗi ca, số lượng khách tối đa trong cả ca. | **P0 (Bắt buộc)** |
 | | `FR-OPER-03` | Cấu hình Ngày lễ & Blackout Dates | Tăng tiền cọc vào dịp Tết/Valentine/Giáng sinh, hoặc chặn đặt ngày quán bảo trì. | **P1 (Quan trọng)** |
 | | `FR-OPER-04` | Màn hình Bếp hiển thị món đặt trước | Danh sách món ăn đặt trước của các bàn sắp đến để bếp chuẩn bị nguyên liệu. | **P1 (Quan trọng)** |
 | **9. Analytics** | `FR-ANA-01` | Báo cáo Doanh thu & Tiền cọc | Thống kê số tiền cọc thu được, tiền hoàn hủy, và doanh thu phạt No-Show. | **P0 (Bắt buộc)** |
 | | `FR-ANA-02` | Biểu đồ Hiệu suất ghế RevPASH | Phân tích doanh thu trên mỗi ghế khả dụng theo từng giờ để tối ưu hóa giá. | **P1 (Quan trọng)** |
-| | `FR-ANA-03` | Bản đồ nhiệt Bàn ăn (Heatmap) | Tô màu bàn trên sơ đồ 2D theo tần suất đặt để nhận biết vị trí "hot" nhất quán. | **P2 (Nâng cao)** |
+| | `FR-ANA-03` | Phân tích Khu vực Bàn Hot (Popularity) | Xếp hạng khu vực bàn đắt khách nhất quán (Outdoor vs VIP vs Bar vs Window). | **P1 (Quan trọng)** |
 | | `FR-ANA-04` | Báo cáo Tỷ lệ No-Show (Bùng hẹn) | Đo lường tỷ lệ bùng bàn theo ngày/tháng để chứng minh hiệu quả giảm bùng hẹn. | **P1 (Quan trọng)** |
 | **10. CRM & Engine** | `FR-SYS-01` | Auto-release Bàn quá hạn 5 phút | Worker tự động hủy đơn và giải phóng bàn về Xanh nếu sau 5p chưa cọc. | **P0 (Bắt buộc)** |
 | | `FR-SYS-02` | Auto-penalty Khách trễ quá 15 phút | Tự động chuyển đơn sang `NO_SHOW` sau 15p giờ hẹn, thu hồi bàn cho khách vãng lai. | **P0 (Bắt buộc)** |
@@ -329,14 +329,19 @@ Dưới đây là đặc tả chi tiết của từng Use Case nghiệp vụ ch�
 
 ---
 
-### UC-05: Tương tác Sơ đồ 2D Mặt bằng (Interactive Canvas Floor Map)
+### UC-05: Đặt bàn theo Thông tin Cung cấp & Chọn Khu vực (Data-driven Booking Flow)
 * **Tác nhân:** Customer.
-* **Mô tả:** Trải nghiệm không gian sống động qua thư viện React-Konva.
-* **Tính năng:**
-  * **Zoom in / Zoom out:** Phóng to xem từng chi tiết ly tách, góc bàn hoặc thu nhỏ xem toàn cảnh tầng.
-  * **Pan / Drag canvas:** Dùng chuột kéo rê mặt bằng dễ dàng.
-  * **Hover Tooltip:** Di chuột vào từng bàn hiển thị Popup: Số bàn, Sức chứa, Tiền cọc yêu cầu, Mô tả góc view (vd: *"Bàn T-08: Sát cửa kính ngắm trọn hoàng hôn phố đi bộ"*).
-  * **Màu sắc trạng thái trực quan:** Xanh lá (Trống), Đỏ (Đã cọc), Vàng nhấp nháy (Đang giữ cọc), Xám (Không khả dụng).
+* **Mô tả:** Khách hàng đặt bàn trực quan, nhanh chóng dựa trên thông tin cung cấp (không cần chọn vị trí trên bản đồ 2D/3D).
+* **Tính năng & Luồng nhập liệu:**
+  * **Chọn Ngày & Khung ca:** Chọn ngày đặt bàn và ca giờ (Ca trưa 11:30 - 13:30, Ca tối giờ vàng 19:00 - 21:00...).
+  * **Số lượng khách:** Chọn số lượng người lớn và trẻ em (yêu cầu thêm ghế em bé nếu có).
+  * **Lựa chọn Khu vực trải nghiệm (`zone_type`):**
+    * Ban công sân vườn ngoài trời (`OUTDOOR`).
+    * Quầy bar hiện đại (`BAR_COUNTER`).
+    * Phòng VIP riêng tư (`PRIVATE_VIP`).
+    * Bàn cạnh cửa kính ngắm view phố (`WINDOW_VIEW`).
+    * Sảnh chính tiêu chuẩn (`STANDARD`).
+  * **Hiển thị tình trạng Real-time:** Tự động tính toán số bàn trống theo Zone, hiện cảnh báo nếu khu vực đã kín chỗ (FULL).
 
 ---
 
@@ -544,13 +549,13 @@ Dưới đây là đặc tả chi tiết của từng Use Case nghiệp vụ ch�
 
 ---
 
-### UC-27: Trình vẽ Mặt bằng Kéo thả (Konva.js Floor Plan Builder)
-* **Tác nhân:** Restaurant Owner / Admin.
-* **Mô tả:** Công cụ chuyên nghiệp giúp chủ quán tự do bố trí lại không gian quán:
-  * Kéo thả Bàn tròn, Bàn vuông, Bàn sofa dài.
-  * Vẽ vách tường ngăn cách, cửa sổ kính, cửa ra vào, cầu thang máy, quầy bar, nhà vệ sinh.
-  * Bắt dính lưới tọa độ 20px (Snap to grid), tự do xoay góc bàn $0^\circ - 360^\circ$.
-  * Lưu trữ cấu trúc dưới dạng JSONB trong PostgreSQL và xuất bản tức thời lên trang web.
+### UC-27: Quản lý Thẻ Box Bàn & Thao tác Gộp Bàn (Table Box Grid & Merge)
+* **Tác nhân:** Restaurant Owner / Admin / Host.
+* **Mô tả:** Công cụ quản trị trực quan hiển thị danh mục bàn dạng lưới thẻ Box (Grid Cards), thay thế hoàn toàn mô hình vẽ 2D/3D phức tạp:
+  * Hiển thị lưới các Box bàn theo từng tầng/khu vực (Mã bàn, Sức chứa, Tiền cọc, Trạng thái hoạt động).
+  * Đổi trạng thái bàn trực tiếp 1-chạm: Mở bàn, Đổi trạng thái, Bật/tắt bảo trì.
+  * **Cơ chế Gộp Bàn (Table Merge):** Cho phép chọn 2 hoặc nhiều Thẻ Box bàn để ghép chung vào 1 đơn đặt bàn cho đoàn khách đông, tự động gộp hóa đơn và cọc.
+  * Xuất bản và đồng bộ trạng thái danh mục bàn xuống hệ thống tức thời.
 
 ---
 

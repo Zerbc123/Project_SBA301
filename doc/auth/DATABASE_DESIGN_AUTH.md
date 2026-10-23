@@ -1,6 +1,6 @@
 # TÀI LIỆU THIẾT KẾ CƠ SỞ DỮ LIỆU & KIẾN TRÚC ĐỊNH DANH (AUTH SERVICE)
 # DỊCH VỤ: AUTH & IDENTITY SERVICE (`tablemaster_auth`)
-## HỆ THỐNG: TABLEMASTER – NỀN TẢNG ĐẶT BÀN & ĐIỀU PHỐI MẶT BẰNG 2D
+## HỆ THỐNG: TABLEMASTER – NỀN TẢNG ĐẶT BÀN & QUẢN LÝ BÀN ĂN NHÀ HÀNG
 
 > **Mã tài liệu:** DB-SPEC-AUTH-01  
 > **Phiên bản:** 2.1.0 (Bản cập nhật Kiến trúc Hybrid Auth & Seamless Phone Identity)  
@@ -77,6 +77,7 @@ entity "users" as users {
   * **is_active** : BOOLEAN = TRUE
   **loyalty_points** : INT = 0
   **avatar_url** : TEXT
+  **dietary_preferences** : TEXT
   **created_at** : TIMESTAMP WITH TIME ZONE
   **updated_at** : TIMESTAMP WITH TIME ZONE
 }
@@ -129,6 +130,7 @@ CREATE TABLE users (
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
     loyalty_points INT DEFAULT 0,             -- Điểm tích lũy thành viên VIP
     avatar_url TEXT,
+    dietary_preferences TEXT,       -- Ghi chú dị ứng, chế độ ăn, món yêu thích (tối đa 1000 ký tự ở tầng API)
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
@@ -144,6 +146,7 @@ CREATE TABLE users (
 | `role` | `VARCHAR(30)` | `NOT NULL` | Phân quyền RBAC: `ROLE_CUSTOMER`, `ROLE_HOST`, `ROLE_WAITER`, `ROLE_MANAGER`, `ROLE_ADMIN`. |
 | `is_active` | `BOOLEAN` | `DEFAULT TRUE` | Khóa tài khoản khi nhân viên nghỉ việc hoặc chặn khách gian lận. |
 | `loyalty_points` | `INT` | `DEFAULT 0` | Điểm tích lũy đổi voucher/quà tặng của nhà hàng. |
+| `dietary_preferences` | `TEXT` | *Nullable* | Ghi chú tự do của khách: dị ứng, chế độ ăn, món yêu thích. Cập nhật qua `PUT /api/v1/auth/me`. |
 
 ---
 
@@ -176,14 +179,14 @@ CREATE TABLE refresh_tokens (
 
 | Quyền hạn / Nghiệp vụ | `ROLE_CUSTOMER` (Thực khách) | `ROLE_HOST` (Lễ tân sảnh) | `ROLE_WAITER` (Phục vụ bàn) | `ROLE_MANAGER` (Quản lý ca) | `ROLE_ADMIN` (Chủ nhà hàng) |
 | :--- | :---: | :---: | :---: | :---: | :---: |
-| **Xem Sơ đồ 2D & Đặt giữ bàn** | ✅ | ✅ | ✅ | ✅ | ✅ |
+| **Xem Danh mục Bàn & Đặt chỗ** | ✅ | ✅ | ✅ | ✅ | ✅ |
 | **Quét Camera QR Check-in khách** | ❌ | ✅ | ❌ | ✅ | ✅ |
 | **Xếp khách vãng lai (Walk-in)** | ❌ | ✅ | ❌ | ✅ | ✅ |
 | **Chuyển bàn / Ghép bàn tại sảnh** | ❌ | ✅ | ❌ | ✅ | ✅ |
 | **Gọi thêm món tại bàn (Mobile App)**| ❌ | ❌ | ✅ | ✅ | ✅ |
 | **Duyệt hoàn tiền cọc (Refund)** | ❌ | ❌ | ❌ | ✅ | ✅ |
 | **Khóa / Mở bàn khẩn cấp** | ❌ | ❌ | ❌ | ✅ | ✅ |
-| **Chỉnh sửa Sơ đồ 2D (Floor Builder)** | ❌ | ❌ | ❌ | ❌ | ✅ |
+| **Quản lý Danh mục Bàn ăn & Ca giờ** | ❌ | ❌ | ❌ | ❌ | ✅ |
 | **Cấu hình Menu, Mức cọc & Ca giờ** | ❌ | ❌ | ❌ | ❌ | ✅ |
 | **Xem Báo cáo Doanh thu & RevPASH** | ❌ | ❌ | ❌ | ❌ | ✅ |
 
@@ -403,6 +406,7 @@ CREATE TABLE users (
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
     loyalty_points INT DEFAULT 0,
     avatar_url TEXT,
+    dietary_preferences TEXT,       -- Ghi chú dị ứng, chế độ ăn, món yêu thích (tối đa 1000 ký tự ở tầng API)
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
@@ -428,8 +432,9 @@ CREATE INDEX idx_refresh_tokens_user ON refresh_tokens(user_id, is_revoked);
 -- Mật khẩu mặc định: 'Admin@123' (Mã băm BCrypt: $2a$10$wN3qN9cO6v0hO4...)
 INSERT INTO users (id, phone_number, email, password_hash, full_name, role, loyalty_points)
 VALUES 
-  ('a0000000-0000-0000-0000-000000000001', '+84900000001', 'admin@primebistro.vn', '$2a$10$wN3qN9cO6v0hO4R81R708uL6eCgHq81.LdYfK7aUjP9Jk2WdM1D1K', 'Chủ Nhà Hàng (Admin)', 0),
-  ('a0000000-0000-0000-0000-000000000002', '+84900000002', 'manager@primebistro.vn', '$2a$10$wN3qN9cO6v0hO4R81R708uL6eCgHq81.LdYfK7aUjP9Jk2WdM1D1K', 'Quản Lý Ca Trực', 0),
-  ('a0000000-0000-0000-0000-000000000003', '+84900000003', 'host@primebistro.vn', '$2a$10$wN3qN9cO6v0hO4R81R708uL6eCgHq81.LdYfK7aUjP9Jk2WdM1D1K', 'Lễ Tân Sảnh Tầng 1', 0),
-  ('a0000000-0000-0000-0000-000000000004', '+84900000004', 'waiter@primebistro.vn', '$2a$10$wN3qN9cO6v0hO4R81R708uL6eCgHq81.LdYfK7aUjP9Jk2WdM1D1K', 'Phục Vụ Bàn Tầng 1', 0),
-  ('a0000000-0000-0000-0000-000000000005', '+84901234567', 'khachvip@gmail.com', NULL, 'Nguyễn Văn A (Khách VIP)', 1250);
+  ('a0000000-0000-0000-0000-000000000001', '+84900000001', 'admin@primebistro.vn', '$2a$10$wN3qN9cO6v0hO4R81R708uL6eCgHq81.LdYfK7aUjP9Jk2WdM1D1K', 'Chủ Nhà Hàng (Admin)', 'ROLE_ADMIN', 0),
+  ('a0000000-0000-0000-0000-000000000002', '+84900000002', 'manager@primebistro.vn', '$2a$10$wN3qN9cO6v0hO4R81R708uL6eCgHq81.LdYfK7aUjP9Jk2WdM1D1K', 'Quản Lý Ca Trực', 'ROLE_MANAGER', 0),
+  ('a0000000-0000-0000-0000-000000000003', '+84900000003', 'host@primebistro.vn', '$2a$10$wN3qN9cO6v0hO4R81R708uL6eCgHq81.LdYfK7aUjP9Jk2WdM1D1K', 'Lễ Tân Sảnh Tầng 1', 'ROLE_HOST', 0),
+  ('a0000000-0000-0000-0000-000000000004', '+84900000004', 'waiter@primebistro.vn', '$2a$10$wN3qN9cO6v0hO4R81R708uL6eCgHq81.LdYfK7aUjP9Jk2WdM1D1K', 'Phục Vụ Bàn Tầng 1', 'ROLE_WAITER', 0),
+  ('a0000000-0000-0000-0000-000000000005', '+84901234567', 'khachvip@gmail.com', NULL, 'Nguyễn Văn A (Khách VIP)', 'ROLE_CUSTOMER', 1250);
+

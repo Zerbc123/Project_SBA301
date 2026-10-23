@@ -7,7 +7,7 @@ spring:
   datasource:
     url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/tablemaster_restaurant
     username: ${DB_USER:postgres}
-    password: ${DB_PASS:postgres}
+    password: ${DB_PASS:postgrespassword}
     driver-class-name: org.postgresql.Driver
   jpa:
     hibernate:
@@ -24,3 +24,4 @@ eureka:
       defaultZone: ${EUREKA_SERVER_URL:http://localhost:8761/eureka/}
   instance:
     prefer-ip-address: true
+

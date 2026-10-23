@@ -1,6 +1,6 @@
 # TÀI LIỆU THIẾT KẾ CƠ SỞ DỮ LIỆU (ANALYTICS SERVICE)
 # DỊCH VỤ: ANALYTICS & BI SERVICE (`tablemaster_analytics`)
-## HỆ THỐNG: TABLEMASTER – NỀN TẢNG ĐẶT BÀN & ĐIỀU PHỐI MẶT BẰNG 2D
+## HỆ THỐNG: TABLEMASTER – NỀN TẢNG ĐẶT BÀN & QUẢN LÝ BÀN ĂN NHÀ HÀNG
 
 > **Mã tài liệu:** DB-SPEC-ANL-01  
 > **Phiên bản:** 2.1.0 (Bản đặc tả Báo cáo Doanh thu, RevPASH, Heatmap Bàn Hot & Khách VIP)  

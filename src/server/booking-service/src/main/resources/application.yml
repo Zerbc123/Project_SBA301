@@ -6,8 +6,8 @@ spring:
     name: booking-service
   datasource:
     url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/tablemaster_booking
-    username: ${DB_USER:postgres}
-    password: ${DB_PASS:postgres}
+    username: ${DB_USER:postgres_duy_dao}
+    password: ${DB_PASS:1234567}
     driver-class-name: org.postgresql.Driver
   jpa:
     hibernate:
@@ -22,7 +22,7 @@ spring:
       host: ${REDIS_HOST:localhost}
       port: ${REDIS_PORT:6379}
   kafka:
-    bootstrap-servers: ${KAFKA_SERVERS:localhost:9092}
+    bootstrap-servers: ${KAFKA_SERVERS:localhost:9094}
     producer:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
       value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
@@ -33,3 +33,6 @@ eureka:
       defaultZone: ${EUREKA_SERVER_URL:http://localhost:8761/eureka/}
   instance:
     prefer-ip-address: true
+
+restaurant-service:
+  url: ${RESTAURANT_SERVICE_URL:http://localhost:8082}

@@ -17,7 +17,7 @@ spring:
       globalcors:
         cors-configurations:
           '[/**]':
-            allowedOrigins: "*"
+            allowedOriginPatterns: "*"
             allowedMethods:
               - GET
               - POST
@@ -26,18 +26,23 @@ spring:
               - PATCH
               - OPTIONS
             allowedHeaders: "*"
+            exposedHeaders: "*"
+            allowCredentials: true
+            max-age: 3600
+      default-filters:
+        - DedupeResponseHeader=Access-Control-Allow-Origin Access-Control-Allow-Credentials, RETAIN_UNIQUE
       routes:
         # Route 1: Auth Service
         - id: auth-service
           uri: lb://auth-service
           predicates:
-            - Path=/api/v1/auth/**
+            - Path=/api/v1/auth/**, /api/v1/users/**
 
         # Route 2: Restaurant & Floor Service
         - id: restaurant-service
           uri: lb://restaurant-service
           predicates:
-            - Path=/api/v1/restaurant/**
+            - Path=/api/v1/restaurant/**, /api/v1/restaurants/**, /api/v1/floor-plans/**, /api/v1/tables/**, /api/v1/time-slots/**, /api/v1/menu/**
 
         # Route 3: Booking & Dispatch Service
         - id: booking-service
