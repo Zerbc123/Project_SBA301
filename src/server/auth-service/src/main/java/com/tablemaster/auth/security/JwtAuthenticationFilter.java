@@ -35,7 +35,10 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             if (StringUtils.hasText(jwt) && jwtTokenProvider.validateToken(jwt)) {
                 String jti = jwtTokenProvider.getJtiFromToken(jwt);
 
-                if (redisTokenBlacklistService.isTokenBlacklisted(jti)) {
+                if (jwtTokenProvider.isIssuedBeforeServerStart(jwt)) {
+                    log.warn("Blocked request with token issued before server restart: {}", jti);
+                    SecurityContextHolder.clearContext();
+                } else if (redisTokenBlacklistService.isTokenBlacklisted(jti)) {
                     log.warn("Blocked request with blacklisted JWT JTI: {}", jti);
                     SecurityContextHolder.clearContext();
                 } else {

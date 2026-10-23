@@ -13,6 +13,7 @@ import {
   Send,
 } from 'lucide-react';
 import type { AuthUser, ReviewItem } from '../../types';
+import { authStorage } from '../../services/authStorage';
 
 interface ReviewModalProps {
   isOpen: boolean;
@@ -64,7 +65,7 @@ export const ReviewModal: React.FC<ReviewModalProps> = ({
       return;
     }
 
-    const accessToken = localStorage.getItem('tm_access_token');
+    const accessToken = authStorage.getAccessToken();
     if (!accessToken) {
       setErrorMsg('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.');
       return;
@@ -103,7 +104,7 @@ export const ReviewModal: React.FC<ReviewModalProps> = ({
         ...user,
         loyaltyPoints: newPoints,
       };
-      localStorage.setItem('tm_user', JSON.stringify(updatedUser));
+      authStorage.setUser(updatedUser);
 
       setSuccessMsg('Cảm ơn bạn! Đã nhận được +50 điểm tích lũy thành viên.');
       onReviewSubmitted(data as ReviewItem, newPoints);

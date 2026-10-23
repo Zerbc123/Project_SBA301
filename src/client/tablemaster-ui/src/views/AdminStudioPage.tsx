@@ -1,5 +1,5 @@
 import { AnalyticsBiSection } from '../components/analytics/AnalyticsBiSection';
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Search,
   FileSpreadsheet,
@@ -12,8 +12,17 @@ import {
   Wallet,
   Users,
   CreditCard,
+  UserCheck,
+  UserX,
+  KeyRound,
+  Sparkles,
+  RefreshCw,
+  Shield,
+  Phone,
+  Award,
 } from 'lucide-react';
 import type { TableItem, BookingDetails } from '../types';
+import { authApi, type AdminUserItem } from '../services/authApi';
 
 interface AdminStudioPageProps {
   tables: TableItem[];
@@ -21,7 +30,7 @@ interface AdminStudioPageProps {
   onUpdateTables: (newTables: TableItem[]) => void;
 }
 
-export type SidebarTab = 'booking' | 'cashflow' | 'staff' | 'menu' | 'analytics';
+export type SidebarTab = 'booking' | 'cashflow' | 'staff' | 'users' | 'menu' | 'analytics';
 
 export const AdminStudioPage: React.FC<AdminStudioPageProps> = ({
   tables,
@@ -32,6 +41,93 @@ export const AdminStudioPage: React.FC<AdminStudioPageProps> = ({
   const [filterStatus, setFilterStatus] = useState<'ALL' | 'CONFIRMED' | 'CHECKED_IN' | 'PENDING_DEPOSIT'>('ALL');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedMatrixFloor, setSelectedMatrixFloor] = useState<1 | 2 | 3>(1);
+
+  // User Management State (Auth Module & Seamless Guest Diners)
+  const [usersList, setUsersList] = useState<AdminUserItem[]>([]);
+  const [isUsersLoading, setIsUsersLoading] = useState(false);
+  const [userSegment, setUserSegment] = useState<'ALL' | 'GUEST' | 'REGISTERED' | 'STAFF'>('ALL');
+  const [userSearchText, setUserSearchText] = useState('');
+  const [adjustPointsModalUser, setAdjustPointsModalUser] = useState<AdminUserItem | null>(null);
+  const [adjustPointsValue, setAdjustPointsValue] = useState<number>(50);
+  const [adjustPointsReason, setAdjustPointsReason] = useState<string>('Thưởng điểm tri ân thực khách');
+  const [setPasswordModalUser, setSetPasswordModalUser] = useState<AdminUserItem | null>(null);
+  const [newPasswordValue, setNewPasswordValue] = useState<string>('');
+  const [syncFeedback, setSyncFeedback] = useState<string | null>(null);
+
+  const fetchUsers = async () => {
+    setIsUsersLoading(true);
+    try {
+      const typeParam = userSegment === 'ALL' ? undefined : userSegment;
+      const data = await authApi.getAllUsers(undefined, typeParam, userSearchText || undefined);
+      setUsersList(data);
+    } catch (err) {
+      console.error('Failed to fetch users:', err);
+    } finally {
+      setIsUsersLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'users') {
+      fetchUsers();
+    }
+  }, [activeTab, userSegment]);
+
+  const handleToggleStatus = async (user: AdminUserItem) => {
+    try {
+      const updated = await authApi.toggleUserStatus(user.id);
+      setUsersList((prev) => prev.map((u) => (u.id === user.id ? updated : u)));
+    } catch (err: any) {
+      alert(err.message || 'Lỗi khi cập nhật trạng thái');
+    }
+  };
+
+  const handleAdjustPointsSubmit = async () => {
+    if (!adjustPointsModalUser) return;
+    try {
+      const updated = await authApi.adjustLoyaltyPoints(
+        adjustPointsModalUser.id,
+        adjustPointsValue,
+        adjustPointsReason
+      );
+      setUsersList((prev) => prev.map((u) => (u.id === adjustPointsModalUser.id ? updated : u)));
+      setAdjustPointsModalUser(null);
+    } catch (err: any) {
+      alert(err.message || 'Lỗi điều chỉnh điểm');
+    }
+  };
+
+  const handleSetPasswordSubmit = async () => {
+    if (!setPasswordModalUser || !newPasswordValue) return;
+    try {
+      const updated = await authApi.setPassword(setPasswordModalUser.id, newPasswordValue);
+      setUsersList((prev) => prev.map((u) => (u.id === setPasswordModalUser.id ? updated : u)));
+      setSetPasswordModalUser(null);
+      setNewPasswordValue('');
+      alert('Đã cấp mật khẩu tài khoản thành công!');
+    } catch (err: any) {
+      alert(err.message || 'Lỗi thiết lập mật khẩu');
+    }
+  };
+
+  const handleSyncDiners = async () => {
+    try {
+      setSyncFeedback('Đang đồng bộ thực khách từ danh sách đặt bàn...');
+      let syncedCount = 0;
+      for (const b of bookings) {
+        if (b.customerName && b.phone) {
+          await authApi.syncGuestBooking(b.customerName, b.phone, `${b.phone}@guest.tablemaster.vn`);
+          syncedCount++;
+        }
+      }
+      setSyncFeedback(`Đã đồng bộ ${syncedCount} thực khách từ hệ thống đặt bàn thành công!`);
+      setTimeout(() => setSyncFeedback(null), 4000);
+      fetchUsers();
+    } catch (err: any) {
+      setSyncFeedback('Lỗi đồng bộ: ' + (err.message || 'Thất bại'));
+      setTimeout(() => setSyncFeedback(null), 4000);
+    }
+  };
 
   // Status handler for real-time table state updates
   const handleTableStatusChange = (tableId: string, newStatus: TableItem['status'], guestName?: string) => {
@@ -183,6 +279,26 @@ export const AdminStudioPage: React.FC<AdminStudioPageProps> = ({
               </span>
             </button>
 
+            {/* Tab 3.5: User & Diner Management (Auth & Direct Guest Diners) */}
+            <button
+              onClick={() => setActiveTab('users')}
+              className={`w-full flex items-center justify-between px-4 py-3 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+                activeTab === 'users'
+                  ? 'bg-gradient-to-r from-[#C4A480] to-[#B3936F] text-white shadow-sm font-bold'
+                  : 'text-[#6B5E54] hover:bg-[#F3ECE0] hover:text-[#2C221E]'
+              }`}
+            >
+              <div className="flex items-center gap-3">
+                <UserCheck className="w-4 h-4" />
+                <span>Khách Hàng & Users</span>
+              </div>
+              <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
+                activeTab === 'users' ? 'bg-white text-[#8C6A43]' : 'bg-[#EFE7DC] text-[#78716C]'
+              }`}>
+                Auth
+              </span>
+            </button>
+
             {/* Tab 4: Combo & Menu Management */}
             <button
               onClick={() => setActiveTab('menu')}
@@ -234,6 +350,7 @@ export const AdminStudioPage: React.FC<AdminStudioPageProps> = ({
               {activeTab === 'booking' && 'Quản Lý Booking & Đặt Bàn'}
               {activeTab === 'cashflow' && 'Quản Lý Dòng Tiền & Cọc VietQR'}
               {activeTab === 'staff' && 'Quản Lý Nhân Viên & Phân Ca Trực'}
+              {activeTab === 'users' && 'Quản Lý Người Dùng & Thực Khách Đặt Trực Tiếp'}
               {activeTab === 'menu' && 'Quản Lý Thực Đơn & Hiệu Suất Combo'}
               {activeTab === 'analytics' && 'Báo Cáo Analytics & Doanh Thu Ca'}
             </h1>
@@ -858,6 +975,489 @@ export const AdminStudioPage: React.FC<AdminStudioPageProps> = ({
                 </div>
               ))}
             </div>
+          </div>
+        )}
+
+        {/* TAB 3.5: QUẢN LÝ NGƯỜI DÙNG & KHÁCH ĐẶT TRỰC TIẾP (AUTH & GUEST DINERS) */}
+        {activeTab === 'users' && (
+          <div className="space-y-6">
+            {/* Sync Feedback Toast */}
+            {syncFeedback && (
+              <div className="p-4 rounded-xl bg-[#FAF4EB] border border-[#C4A480] text-[#8C6A43] text-xs font-semibold flex items-center justify-between shadow-sm animate-fade-in">
+                <div className="flex items-center gap-2">
+                  <Sparkles className="w-4 h-4 text-[#8C6A43]" />
+                  <span>{syncFeedback}</span>
+                </div>
+              </div>
+            )}
+
+            {/* Top Stats Overview */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              {/* Card 1: Total Users */}
+              <div className="bg-white border border-[#EBE5DC] rounded-2xl p-5 shadow-xs flex items-center justify-between">
+                <div>
+                  <span className="text-[10px] font-bold text-[#78716C] uppercase tracking-wider block">
+                    Tổng Thực Khách & Users
+                  </span>
+                  <div className="text-2xl font-serif font-bold text-[#1C1917] mt-1">
+                    {usersList.length}
+                  </div>
+                  <span className="text-[10px] text-[#8C6A43] font-semibold mt-0.5 block">
+                    Toàn bộ hồ sơ trong cơ sở dữ liệu
+                  </span>
+                </div>
+                <div className="w-10 h-10 rounded-xl bg-[#FAF7F2] border border-[#EBE5DC] flex items-center justify-between p-2 text-[#8C6A43]">
+                  <Users className="w-6 h-6" />
+                </div>
+              </div>
+
+              {/* Card 2: Seamless Guest Diners */}
+              <div className="bg-white border border-[#EBE5DC] rounded-2xl p-5 shadow-xs flex items-center justify-between">
+                <div>
+                  <span className="text-[10px] font-bold text-[#B45309] uppercase tracking-wider block">
+                    Khách Đặt Trực Tiếp (SĐT)
+                  </span>
+                  <div className="text-2xl font-serif font-bold text-[#B45309] mt-1">
+                    {usersList.filter((u) => !u.hasPassword).length}
+                  </div>
+                  <span className="text-[10px] text-[#78716C] mt-0.5 block">
+                    Chưa đăng ký mật khẩu (Seamless)
+                  </span>
+                </div>
+                <div className="w-10 h-10 rounded-xl bg-[#FEF3C7] border border-[#FDE68A] flex items-center justify-center text-[#B45309]">
+                  <Phone className="w-5 h-5" />
+                </div>
+              </div>
+
+              {/* Card 3: VIP Registered Members */}
+              <div className="bg-white border border-[#EBE5DC] rounded-2xl p-5 shadow-xs flex items-center justify-between">
+                <div>
+                  <span className="text-[10px] font-bold text-[#15803D] uppercase tracking-wider block">
+                    Thành Viên Đã Đăng Ký
+                  </span>
+                  <div className="text-2xl font-serif font-bold text-[#15803D] mt-1">
+                    {usersList.filter((u) => u.hasPassword && u.role === 'ROLE_CUSTOMER').length}
+                  </div>
+                  <span className="text-[10px] text-[#78716C] mt-0.5 block">
+                    Đã có mật khẩu & tích lũy VIP
+                  </span>
+                </div>
+                <div className="w-10 h-10 rounded-xl bg-[#DCFCE7] border border-[#BBF7D0] flex items-center justify-center text-[#15803D]">
+                  <Award className="w-5 h-5" />
+                </div>
+              </div>
+
+              {/* Card 4: Staff & Internal Roles */}
+              <div className="bg-white border border-[#EBE5DC] rounded-2xl p-5 shadow-xs flex items-center justify-between">
+                <div>
+                  <span className="text-[10px] font-bold text-[#4338CA] uppercase tracking-wider block">
+                    Nhân Sự & Ban Quản Lý
+                  </span>
+                  <div className="text-2xl font-serif font-bold text-[#4338CA] mt-1">
+                    {usersList.filter((u) => u.role !== 'ROLE_CUSTOMER').length}
+                  </div>
+                  <span className="text-[10px] text-[#78716C] mt-0.5 block">
+                    Admin / Manager / Host / Waiter
+                  </span>
+                </div>
+                <div className="w-10 h-10 rounded-xl bg-[#EEF2FF] border border-[#E0E7FF] flex items-center justify-center text-[#4338CA]">
+                  <Shield className="w-5 h-5" />
+                </div>
+              </div>
+            </div>
+
+            {/* Filter segments & Actions Bar */}
+            <div className="bg-white border border-[#EBE5DC] rounded-2xl p-6 shadow-xs space-y-4">
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-[#EBE5DC]">
+                {/* Segment buttons */}
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    onClick={() => setUserSegment('ALL')}
+                    className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                      userSegment === 'ALL'
+                        ? 'bg-[#2C221E] text-white shadow-xs'
+                        : 'bg-[#FAF7F2] text-[#78716C] hover:text-[#1C1917] border border-[#EBE5DC]'
+                    }`}
+                  >
+                    Tất Cả ({usersList.length})
+                  </button>
+                  <button
+                    onClick={() => setUserSegment('GUEST')}
+                    className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 cursor-pointer ${
+                      userSegment === 'GUEST'
+                        ? 'bg-[#B45309] text-white shadow-xs'
+                        : 'bg-[#FAF7F2] text-[#B45309] hover:bg-[#FEF3C7] border border-[#FDE68A]'
+                    }`}
+                  >
+                    <Phone className="w-3.5 h-3.5" />
+                    <span>Khách Đặt Trực Tiếp (Seamless)</span>
+                  </button>
+                  <button
+                    onClick={() => setUserSegment('REGISTERED')}
+                    className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 cursor-pointer ${
+                      userSegment === 'REGISTERED'
+                        ? 'bg-[#15803D] text-white shadow-xs'
+                        : 'bg-[#FAF7F2] text-[#15803D] hover:bg-[#DCFCE7] border border-[#BBF7D0]'
+                    }`}
+                  >
+                    <Award className="w-3.5 h-3.5" />
+                    <span>Thành Viên Đã Đăng Ký</span>
+                  </button>
+                  <button
+                    onClick={() => setUserSegment('STAFF')}
+                    className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 cursor-pointer ${
+                      userSegment === 'STAFF'
+                        ? 'bg-[#4338CA] text-white shadow-xs'
+                        : 'bg-[#FAF7F2] text-[#4338CA] hover:bg-[#EEF2FF] border border-[#E0E7FF]'
+                    }`}
+                  >
+                    <Shield className="w-3.5 h-3.5" />
+                    <span>Nhân Viên & Quản Lý</span>
+                  </button>
+                </div>
+
+                {/* Right controls: Search + Sync Diners + Refresh */}
+                <div className="flex items-center gap-2.5">
+                  <div className="relative">
+                    <Search className="w-3.5 h-3.5 text-[#78716C] absolute left-3 top-1/2 -translate-y-1/2" />
+                    <input
+                      type="text"
+                      value={userSearchText}
+                      onChange={(e) => setUserSearchText(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && fetchUsers()}
+                      placeholder="Tìm theo tên, SĐT, email..."
+                      className="bg-[#FAF7F2] border border-[#EBE5DC] rounded-xl pl-8 pr-3 py-1.5 text-xs text-[#1C1917] focus:outline-none focus:border-[#C4A480] w-52 sm:w-60"
+                    />
+                  </div>
+
+                  <button
+                    onClick={fetchUsers}
+                    title="Làm mới danh sách"
+                    className="p-2 rounded-xl border border-[#EBE5DC] bg-[#FAF7F2] hover:bg-[#F3ECE0] text-[#78716C] cursor-pointer"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${isUsersLoading ? 'animate-spin' : ''}`} />
+                  </button>
+
+                  <button
+                    onClick={handleSyncDiners}
+                    className="btn-gold px-3.5 py-1.5 text-xs font-semibold flex items-center gap-1.5 cursor-pointer active:scale-95 shadow-xs"
+                    title="Đồng bộ khách đặt bàn trực tiếp vào cơ sở dữ liệu Auth"
+                  >
+                    <Sparkles className="w-3.5 h-3.5" />
+                    <span className="hidden sm:inline">Đồng Bộ Khách Đặt Bàn</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Table of Users */}
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="border-b border-[#EBE5DC] text-[10px] font-bold text-[#78716C] uppercase tracking-wider bg-[#FAF7F2]/60">
+                      <th className="py-3 px-4">Thực Khách / Người Dùng</th>
+                      <th className="py-3 px-4">Phân Loại Khách</th>
+                      <th className="py-3 px-4">Số Điện Thoại & Email</th>
+                      <th className="py-3 px-4 text-center">Hạng VIP & Điểm</th>
+                      <th className="py-3 px-4">Khẩu Vị & Sở Thích</th>
+                      <th className="py-3 px-4 text-center">Trạng Thái</th>
+                      <th className="py-3 px-4 text-right">Thao Tác</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-[#EBE5DC] text-xs">
+                    {isUsersLoading ? (
+                      <tr>
+                        <td colSpan={7} className="py-12 text-center text-[#78716C]">
+                          <RefreshCw className="w-6 h-6 animate-spin mx-auto text-[#C4A480] mb-2" />
+                          <span>Đang tải danh sách người dùng...</span>
+                        </td>
+                      </tr>
+                    ) : usersList.length === 0 ? (
+                      <tr>
+                        <td colSpan={7} className="py-12 text-center text-[#78716C]">
+                          <Users className="w-8 h-8 text-[#C4A480] mx-auto mb-2 opacity-60" />
+                          <p className="font-semibold text-sm text-[#1C1917]">Chưa có người dùng nào phù hợp</p>
+                          <p className="text-xs text-[#78716C] mt-1">
+                            Nhấn nút &ldquo;Đồng Bộ Khách Đặt Bàn&rdquo; ở góc trên để nạp khách hàng từ đơn đặt bàn.
+                          </p>
+                        </td>
+                      </tr>
+                    ) : (
+                      usersList.map((user) => {
+                        const isGuest = !user.hasPassword && user.role === 'ROLE_CUSTOMER';
+                        const isRegistered = user.hasPassword && user.role === 'ROLE_CUSTOMER';
+                        const isStaff = user.role !== 'ROLE_CUSTOMER';
+                        const pts = user.loyaltyPoints ?? 0;
+
+                        const tierBadge =
+                          pts >= 1000
+                            ? { label: 'Kim Cương (Diamond)', bg: 'bg-purple-100 text-purple-700 border-purple-200' }
+                            : pts >= 500
+                            ? { label: 'Vàng (Gold VIP)', bg: 'bg-amber-100 text-amber-800 border-amber-200' }
+                            : pts >= 200
+                            ? { label: 'Bạc (Silver)', bg: 'bg-slate-100 text-slate-700 border-slate-200' }
+                            : { label: 'Tiêu Chuẩn (Standard)', bg: 'bg-[#FAF7F2] text-[#78716C] border-[#EBE5DC]' };
+
+                        return (
+                          <tr key={user.id} className="hover:bg-[#FAF7F2]/40 transition-colors">
+                            {/* User Info */}
+                            <td className="py-3.5 px-4">
+                              <div className="flex items-center gap-3">
+                                <div className="w-9 h-9 rounded-full bg-[#FAF4EB] border border-[#E0D7C9] flex items-center justify-center font-bold text-xs text-[#8C6A43] shrink-0">
+                                  {user.fullName ? user.fullName.charAt(0).toUpperCase() : 'U'}
+                                </div>
+                                <div>
+                                  <div className="font-semibold text-[#1C1917]">{user.fullName || 'Khách Vãng Lai'}</div>
+                                  <div className="text-[10px] text-[#78716C]">ID: {user.id.slice(0, 8)}...</div>
+                                </div>
+                              </div>
+                            </td>
+
+                            {/* Classification Badge */}
+                            <td className="py-3.5 px-4">
+                              {isGuest && (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-[#FEF3C7] text-[#B45309] border border-[#FDE68A]">
+                                  <Phone className="w-3 h-3" />
+                                  <span>Đặt Nhanh Qua SĐT</span>
+                                </span>
+                              )}
+                              {isRegistered && (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-[#DCFCE7] text-[#15803D] border border-[#BBF7D0]">
+                                  <Award className="w-3 h-3" />
+                                  <span>Thành Viên Đã Đăng Ký</span>
+                                </span>
+                              )}
+                              {isStaff && (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-[#EEF2FF] text-[#4338CA] border border-[#E0E7FF]">
+                                  <Shield className="w-3 h-3" />
+                                  <span>{user.role.replace('ROLE_', '')}</span>
+                                </span>
+                              )}
+                            </td>
+
+                            {/* Contact Info */}
+                            <td className="py-3.5 px-4">
+                              <div className="font-medium text-[#1C1917]">{user.phone || '—'}</div>
+                              <div className="text-[10px] text-[#78716C]">{user.email}</div>
+                            </td>
+
+                            {/* Loyalty Points & VIP Tier */}
+                            <td className="py-3.5 px-4 text-center">
+                              <div className="font-serif font-bold text-sm text-[#8C6A43]">
+                                {pts.toLocaleString()} <span className="text-[10px]">pts</span>
+                              </div>
+                              <span
+                                className={`inline-block px-2 py-0.5 rounded text-[9px] font-semibold border mt-0.5 ${tierBadge.bg}`}
+                              >
+                                {tierBadge.label}
+                              </span>
+                            </td>
+
+                            {/* Dietary Preferences */}
+                            <td className="py-3.5 px-4 max-w-[180px]">
+                              {user.dietaryPreferences ? (
+                                <span className="text-[11px] text-[#2C221E] bg-[#FAF4EB] px-2 py-0.5 rounded border border-[#E0D7C9] line-clamp-2">
+                                  {user.dietaryPreferences}
+                                </span>
+                              ) : (
+                                <span className="text-[10px] text-[#A8A29E] italic">Chưa có ghi chú</span>
+                              )}
+                            </td>
+
+                            {/* Status */}
+                            <td className="py-3.5 px-4 text-center">
+                              <span
+                                className={`inline-block px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
+                                  user.isActive
+                                    ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                    : 'bg-rose-50 text-rose-700 border border-rose-200'
+                                }`}
+                              >
+                                {user.isActive ? 'Hoạt Động' : 'Đã Khóa'}
+                              </span>
+                            </td>
+
+                            {/* Actions */}
+                            <td className="py-3.5 px-4 text-right">
+                              <div className="flex items-center justify-end gap-1.5">
+                                {/* Button: Adjust points */}
+                                <button
+                                  onClick={() => {
+                                    setAdjustPointsModalUser(user);
+                                    setAdjustPointsValue(50);
+                                  }}
+                                  title="Thưởng / Trừ Điểm Tích Lũy"
+                                  className="p-1.5 rounded-lg border border-[#EBE5DC] bg-white hover:bg-[#FAF7F2] text-[#8C6A43] hover:text-[#735431] cursor-pointer"
+                                >
+                                  <Sparkles className="w-3.5 h-3.5" />
+                                </button>
+
+                                {/* Button: Set password for guests */}
+                                {isGuest && (
+                                  <button
+                                    onClick={() => {
+                                      setSetPasswordModalUser(user);
+                                      setNewPasswordValue('');
+                                    }}
+                                    title="Cấp mật khẩu để nâng cấp thành tài khoản VIP đầy đủ"
+                                    className="p-1.5 rounded-lg border border-[#FDE68A] bg-[#FEF3C7] hover:bg-[#FDE68A] text-[#B45309] cursor-pointer"
+                                  >
+                                    <KeyRound className="w-3.5 h-3.5" />
+                                  </button>
+                                )}
+
+                                {/* Button: Toggle lock status */}
+                                <button
+                                  onClick={() => handleToggleStatus(user)}
+                                  title={user.isActive ? 'Khóa tài khoản' : 'Mở khóa tài khoản'}
+                                  className={`p-1.5 rounded-lg border cursor-pointer ${
+                                    user.isActive
+                                      ? 'border-[#EBE5DC] bg-white hover:bg-rose-50 text-[#78716C] hover:text-rose-600'
+                                      : 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
+                                  }`}
+                                >
+                                  {user.isActive ? <UserX className="w-3.5 h-3.5" /> : <UserCheck className="w-3.5 h-3.5" />}
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* MODAL 1: Điều chỉnh điểm thưởng / tích lũy */}
+            {adjustPointsModalUser && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4">
+                <div className="bg-white rounded-2xl max-w-md w-full p-6 border border-[#EBE5DC] shadow-xl space-y-4">
+                  <div className="flex items-center justify-between pb-3 border-b border-[#EBE5DC]">
+                    <div className="flex items-center gap-2">
+                      <Sparkles className="w-5 h-5 text-[#8C6A43]" />
+                      <h3 className="font-serif font-bold text-base text-[#1C1917]">
+                        Điều Chỉnh Điểm Tích Lũy
+                      </h3>
+                    </div>
+                    <button
+                      onClick={() => setAdjustPointsModalUser(null)}
+                      className="text-[#78716C] hover:text-[#1C1917] text-sm font-bold"
+                    >
+                      ✕
+                    </button>
+                  </div>
+
+                  <div className="space-y-3 text-xs">
+                    <div>
+                      <span className="text-[#78716C] block">Khách hàng:</span>
+                      <strong className="text-sm text-[#1C1917]">{adjustPointsModalUser.fullName}</strong>
+                      <span className="text-[#78716C] text-[11px] block">
+                        Điểm hiện tại: {adjustPointsModalUser.loyaltyPoints} pts
+                      </span>
+                    </div>
+
+                    <div>
+                      <label className="font-semibold text-[#1C1917] block mb-1">
+                        Số điểm thay đổi (+ cộng thêm, - trừ bớt):
+                      </label>
+                      <input
+                        type="number"
+                        value={adjustPointsValue}
+                        onChange={(e) => setAdjustPointsValue(parseInt(e.target.value) || 0)}
+                        className="w-full bg-[#FAF7F2] border border-[#EBE5DC] rounded-xl px-3 py-2 text-sm text-[#1C1917] font-semibold focus:outline-none focus:border-[#C4A480]"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="font-semibold text-[#1C1917] block mb-1">
+                        Lý do điều chỉnh (sẽ ghi vào lịch sử audit):
+                      </label>
+                      <input
+                        type="text"
+                        value={adjustPointsReason}
+                        onChange={(e) => setAdjustPointsReason(e.target.value)}
+                        placeholder="VD: Tri ân khách VIP, hoàn điểm dịch vụ..."
+                        className="w-full bg-[#FAF7F2] border border-[#EBE5DC] rounded-xl px-3 py-2 text-xs text-[#1C1917] focus:outline-none focus:border-[#C4A480]"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-end gap-2 pt-3 border-t border-[#EBE5DC]">
+                    <button
+                      onClick={() => setAdjustPointsModalUser(null)}
+                      className="px-4 py-2 rounded-xl text-xs font-semibold text-[#78716C] hover:bg-[#FAF7F2] cursor-pointer"
+                    >
+                      Hủy Bỏ
+                    </button>
+                    <button
+                      onClick={handleAdjustPointsSubmit}
+                      className="btn-gold px-4 py-2 text-xs font-semibold cursor-pointer active:scale-95"
+                    >
+                      Xác Nhận Cập Nhật
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* MODAL 2: Cấp mật khẩu cho khách đặt trực tiếp */}
+            {setPasswordModalUser && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4">
+                <div className="bg-white rounded-2xl max-w-md w-full p-6 border border-[#EBE5DC] shadow-xl space-y-4">
+                  <div className="flex items-center justify-between pb-3 border-b border-[#EBE5DC]">
+                    <div className="flex items-center gap-2">
+                      <KeyRound className="w-5 h-5 text-[#8C6A43]" />
+                      <h3 className="font-serif font-bold text-base text-[#1C1917]">
+                        Cấp Mật Khẩu Tài Khoản VIP
+                      </h3>
+                    </div>
+                    <button
+                      onClick={() => setSetPasswordModalUser(null)}
+                      className="text-[#78716C] hover:text-[#1C1917] text-sm font-bold"
+                    >
+                      ✕
+                    </button>
+                  </div>
+
+                  <div className="space-y-3 text-xs">
+                    <p className="text-[#78716C] leading-relaxed">
+                      Khách hàng <strong>{setPasswordModalUser.fullName}</strong> ({setPasswordModalUser.phone})
+                      đã đặt bàn trực tiếp. Thiết lập mật khẩu sẽ chuyển đổi khách thành <strong>Thành Viên VIP Chính Thức</strong>,
+                      cho phép khách đăng nhập và tra cứu lịch sử đặt bàn.
+                    </p>
+
+                    <div>
+                      <label className="font-semibold text-[#1C1917] block mb-1">
+                        Mật khẩu khởi tạo:
+                      </label>
+                      <input
+                        type="password"
+                        value={newPasswordValue}
+                        onChange={(e) => setNewPasswordValue(e.target.value)}
+                        placeholder="Nhập tối thiểu 6 ký tự..."
+                        className="w-full bg-[#FAF7F2] border border-[#EBE5DC] rounded-xl px-3 py-2 text-sm text-[#1C1917] focus:outline-none focus:border-[#C4A480]"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-end gap-2 pt-3 border-t border-[#EBE5DC]">
+                    <button
+                      onClick={() => setSetPasswordModalUser(null)}
+                      className="px-4 py-2 rounded-xl text-xs font-semibold text-[#78716C] hover:bg-[#FAF7F2] cursor-pointer"
+                    >
+                      Hủy Bỏ
+                    </button>
+                    <button
+                      onClick={handleSetPasswordSubmit}
+                      disabled={!newPasswordValue || newPasswordValue.length < 6}
+                      className="btn-gold px-4 py-2 text-xs font-semibold cursor-pointer active:scale-95 disabled:opacity-50"
+                    >
+                      Cấp Mật Khẩu & Kích Hoạt
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         )}
 

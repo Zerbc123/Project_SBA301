@@ -15,6 +15,10 @@ export default defineConfig({
         target: 'http://localhost:8081',
         changeOrigin: true,
       },
+      '/api/v1/reviews': {
+        target: 'http://localhost:8081',
+        changeOrigin: true,
+      },
       '/api/v1/restaurant': {
         target: 'http://localhost:8082',
         changeOrigin: true,

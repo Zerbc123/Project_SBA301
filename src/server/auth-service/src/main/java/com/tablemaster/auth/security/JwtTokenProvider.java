@@ -28,9 +28,11 @@ public class JwtTokenProvider {
     private long refreshTokenExpirationMs;
 
     private SecretKey key;
+    private long serverStartTime;
 
     @PostConstruct
     public void init() {
+        this.serverStartTime = System.currentTimeMillis();
         byte[] keyBytes = jwtSecret.getBytes(StandardCharsets.UTF_8);
         if (keyBytes.length < 32) {
             // Guarantee at least 256 bits for HMAC-SHA256
@@ -109,6 +111,17 @@ public class JwtTokenProvider {
             return Math.max(diff, 0);
         } catch (Exception e) {
             return 0;
+        }
+    }
+
+    public boolean isIssuedBeforeServerStart(String token) {
+        try {
+            Claims claims = parseClaims(token);
+            Date issuedAt = claims.getIssuedAt();
+            // Reject any token issued before the current server startup (allow 5000ms grace period for clock skew)
+            return issuedAt != null && issuedAt.getTime() < (serverStartTime - 5000);
+        } catch (Exception e) {
+            return true;
         }
     }
 
