@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, User, Image as ImageIcon, Utensils, ShieldAlert, CheckCircle2, Star, Crown } from 'lucide-react';
 import type { AuthUser, LoyaltyWallet } from '../../types';
+import { authStorage } from '../../services/authStorage';
 
 interface ProfileModalProps {
   isOpen: boolean;
@@ -43,7 +44,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
       setErrorMsg(null);
       setSuccessMsg(null);
 
-      const accessToken = localStorage.getItem('tm_access_token');
+      const accessToken = authStorage.getAccessToken();
       if (accessToken) {
         fetch('/api/v1/auth/loyalty', {
           headers: { Authorization: `Bearer ${accessToken}` },
@@ -78,7 +79,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
       return;
     }
 
-    const accessToken = localStorage.getItem('tm_access_token');
+    const accessToken = authStorage.getAccessToken();
     if (!accessToken) {
       setErrorMsg('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.');
       return;
@@ -114,7 +115,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
         throw new Error(data.message || data.error || `Cập nhật thất bại (${response.status}).`);
       }
 
-      localStorage.setItem('tm_user', JSON.stringify(data));
+      authStorage.setUser(data as AuthUser);
       onProfileUpdated(data as AuthUser);
       setSuccessMsg('Đã lưu hồ sơ của bạn.');
     } catch (err: unknown) {
