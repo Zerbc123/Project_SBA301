@@ -7,7 +7,7 @@ spring:
   datasource:
     url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/tablemaster_analytics
     username: ${DB_USER:postgres}
-    password: ${DB_PASS:postgrespassword}
+    password: ${DB_PASS:123456}
     driver-class-name: org.postgresql.Driver
   jpa:
     hibernate:

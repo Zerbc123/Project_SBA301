@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Search,
   Plus,
@@ -12,25 +12,29 @@ import {
   Merge,
   Utensils,
   Edit3,
+  Loader2,
 } from 'lucide-react';
-import type { TableItem, TableOrderRecord } from '../types';
+import type { TableItem, TableOrderRecord, AuthUser } from '../types';
 import { SIGNATURE_DISHES } from '../data/mockData';
+import { restaurantApi } from '../services/restaurantApi';
 
 interface WaitstaffMobilePageProps {
   tables: TableItem[];
   tableOrders: Record<string, TableOrderRecord>;
+  currentUser?: AuthUser | null;
   onAddItemsToTable: (
     tableId: string,
     items: { dishId: string; name: string; price: number; quantity: number; notes?: string; category: string }[]
-  ) => void;
-  onTransferTable?: (sourceTableId: string, targetTableId: string) => void;
-  onMergeTables?: (sourceTableId: string, targetTableId: string) => void;
+  ) => Promise<void> | void;
+  onTransferTable?: (sourceTableId: string, targetTableId: string) => Promise<void> | void;
+  onMergeTables?: (sourceTableId: string, targetTableId: string) => Promise<void> | void;
   onNavigateToHost?: () => void;
 }
 
 export const WaitstaffMobilePage: React.FC<WaitstaffMobilePageProps> = ({
   tables,
   tableOrders,
+  currentUser,
   onAddItemsToTable,
   onTransferTable,
   onMergeTables,
@@ -44,6 +48,58 @@ export const WaitstaffMobilePage: React.FC<WaitstaffMobilePageProps> = ({
 
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('ALL');
+
+  // Dynamic dishes loaded from restaurant-service backend (with mockData fallback)
+  const [dishesList, setDishesList] = useState<typeof SIGNATURE_DISHES>(SIGNATURE_DISHES);
+  const [categoryTabs, setCategoryTabs] = useState<{ id: string; label: string }[]>([
+    { id: 'ALL', label: 'Tất Cả' },
+    { id: 'Set Menu & Combo', label: '🌟 Set Combo' },
+    { id: 'Bò Dry-Aged & Món Chính', label: '🥩 Bò & Steak' },
+    { id: 'Rượu Vang & Champagne', label: '🍷 Rượu Vang' },
+    { id: 'Khai Vị & Tráng Miệng', label: '🍰 Tráng Miệng' },
+  ]);
+  const [isBackendMenuConnected, setIsBackendMenuConnected] = useState<boolean>(false);
+  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+
+  // Load menu thật từ Backend restaurant-service (cổng 8082 - UC-29)
+  useEffect(() => {
+    let active = true;
+    restaurantApi
+      .getMenuItems(undefined, true)
+      .then((items) => {
+        if (!active) return;
+        if (Array.isArray(items) && items.length > 0) {
+          setIsBackendMenuConnected(true);
+          const mapped = items.map((it) => ({
+            id: it.id,
+            name: it.name,
+            vietnameseName: it.name,
+            price: Number(it.price) || 50000,
+            category: it.categoryName || 'Món Chính',
+            description: it.description || '',
+            image: it.imageUrl || 'https://images.unsplash.com/photo-1544025162-d76694265947?w=300',
+            preOrderOnly: !it.isPreorderAvailable,
+            signatureBadge: 'Đặc Sản',
+          }));
+          setDishesList(mapped);
+
+          const uniqueCats = Array.from(new Set(items.map((i) => i.categoryName).filter(Boolean)));
+          if (uniqueCats.length > 0) {
+            setCategoryTabs([
+              { id: 'ALL', label: 'Tất Cả' },
+              ...uniqueCats.map((cat) => ({ id: cat!, label: cat! })),
+            ]);
+          }
+        }
+      })
+      .catch((err) => {
+        console.warn('⚠️ [WaitstaffMobile] Dùng menu fallback do backend menu chưa bật:', err?.message || err);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
 
   // Pending cart for this table before sending
   const [pendingCart, setPendingCart] = useState<Record<string, { quantity: number; notes: string }>>({});
@@ -115,7 +171,7 @@ export const WaitstaffMobilePage: React.FC<WaitstaffMobilePageProps> = ({
 
   const pendingItemsArray = Object.entries(pendingCart)
     .map(([dishId, { quantity, notes }]) => {
-      const dish = SIGNATURE_DISHES.find((d) => d.id === dishId);
+      const dish = dishesList.find((d) => d.id === dishId) || SIGNATURE_DISHES.find((d) => d.id === dishId);
       return dish ? { dish, quantity, notes } : null;
     })
     .filter((item): item is { dish: typeof SIGNATURE_DISHES[0]; quantity: number; notes: string } => item !== null);
@@ -123,8 +179,8 @@ export const WaitstaffMobilePage: React.FC<WaitstaffMobilePageProps> = ({
   const pendingItemsCount = pendingItemsArray.reduce((sum, i) => sum + i.quantity, 0);
   const pendingTotal = pendingItemsArray.reduce((sum, i) => sum + i.dish.price * i.quantity, 0);
 
-  const handleSendOrderToCashier = () => {
-    if (pendingItemsArray.length === 0) return;
+  const handleSendOrderToCashier = async () => {
+    if (pendingItemsArray.length === 0 || isSubmitting) return;
 
     const itemsToSend = pendingItemsArray.map((item) => ({
       dishId: item.dish.id,
@@ -135,55 +191,75 @@ export const WaitstaffMobilePage: React.FC<WaitstaffMobilePageProps> = ({
       category: item.dish.category,
     }));
 
-    onAddItemsToTable(selectedTableId, itemsToSend);
-    showToast(`Đã gửi ${pendingItemsCount} món của bàn ${currentTable.code} về Quầy Thu Ngân!`);
-    setPendingCart({});
+    setIsSubmitting(true);
+    try {
+      await onAddItemsToTable(selectedTableId, itemsToSend);
+      showToast(`Đã gửi ${pendingItemsCount} món của bàn ${currentTable.code} về Quầy Thu Ngân & Bếp!`);
+      setPendingCart({});
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
-  const handleAddCustomDish = () => {
-    if (!customName.trim()) return;
+  const handleAddCustomDish = async () => {
+    if (!customName.trim() || isSubmitting) return;
     const priceNum = parseInt(customPrice.replace(/\D/g, ''), 10) || 0;
 
-    onAddItemsToTable(selectedTableId, [
-      {
-        dishId: `custom-mobile-${Date.now()}`,
-        name: customName.trim(),
-        price: priceNum,
-        quantity: 1,
-        notes: customNotes.trim(),
-        category: 'Món Nhập Riêng',
-      },
-    ]);
+    setIsSubmitting(true);
+    try {
+      await onAddItemsToTable(selectedTableId, [
+        {
+          dishId: `custom-mobile-${Date.now()}`,
+          name: customName.trim(),
+          price: priceNum,
+          quantity: 1,
+          notes: customNotes.trim(),
+          category: 'Món Nhập Riêng',
+        },
+      ]);
 
-    setCustomName('');
-    setCustomPrice('50000');
-    setCustomNotes('');
-    setIsCustomDishModalOpen(false);
-    showToast(`Đã thêm món riêng vào bàn ${currentTable.code}!`);
+      setCustomName('');
+      setCustomPrice('50000');
+      setCustomNotes('');
+      setIsCustomDishModalOpen(false);
+      showToast(`Đã thêm món riêng vào bàn ${currentTable.code}!`);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
-  const handleConfirmTransfer = () => {
-    if (!transferTargetId || !onTransferTable) return;
+  const handleConfirmTransfer = async () => {
+    if (!transferTargetId || !onTransferTable || isSubmitting) return;
     const targetTable = tables.find((t) => t.id === transferTargetId);
     if (!targetTable) return;
 
-    onTransferTable(currentTable.id, transferTargetId);
-    showToast(`Đã chuyển toàn bộ hóa đơn từ ${currentTable.code} sang ${targetTable.code}`);
-    setSelectedTableId(transferTargetId);
-    setIsTransferModalOpen(false);
-    setTransferTargetId('');
+    setIsSubmitting(true);
+    try {
+      await onTransferTable(currentTable.id, transferTargetId);
+      showToast(`Đã chuyển toàn bộ hóa đơn từ ${currentTable.code} sang ${targetTable.code}`);
+      setSelectedTableId(transferTargetId);
+      setIsTransferModalOpen(false);
+      setTransferTargetId('');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
-  const handleConfirmMerge = () => {
-    if (!mergeTargetId || !onMergeTables) return;
+  const handleConfirmMerge = async () => {
+    if (!mergeTargetId || !onMergeTables || isSubmitting) return;
     const targetTable = tables.find((t) => t.id === mergeTargetId);
     if (!targetTable) return;
 
-    onMergeTables(currentTable.id, mergeTargetId);
-    showToast(`Đã gộp món từ bàn ${currentTable.code} vào bàn ${targetTable.code}`);
-    setSelectedTableId(mergeTargetId);
-    setIsMergeModalOpen(false);
-    setMergeTargetId('');
+    setIsSubmitting(true);
+    try {
+      await onMergeTables(currentTable.id, mergeTargetId);
+      showToast(`Đã gộp món từ bàn ${currentTable.code} vào bàn ${targetTable.code}`);
+      setSelectedTableId(mergeTargetId);
+      setIsMergeModalOpen(false);
+      setMergeTargetId('');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   // Existing order total calculation
@@ -202,8 +278,10 @@ export const WaitstaffMobilePage: React.FC<WaitstaffMobilePageProps> = ({
             <span className="font-bold text-[#E8DFD1]">Waiter POS Mobile</span>
           </div>
           <div className="flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-            <span className="text-[10px] text-emerald-300">Đã kết nối Thu Ngân</span>
+            <span className={`w-2 h-2 rounded-full ${isBackendMenuConnected ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'}`} />
+            <span className={`text-[10px] ${isBackendMenuConnected ? 'text-emerald-300 font-bold' : 'text-amber-300'}`}>
+              {isBackendMenuConnected ? 'Đã nối BE (8082/8083)' : 'Chế độ Demo Cục Bộ'}
+            </span>
           </div>
         </div>
 
@@ -212,10 +290,10 @@ export const WaitstaffMobilePage: React.FC<WaitstaffMobilePageProps> = ({
           <div className="flex items-center justify-between">
             <div>
               <p className="text-[10px] uppercase tracking-widest text-[#C4A480] font-mono font-bold">
-                Phục Vụ Trực Bàn
+                Phục Vụ Trực Bàn • {currentUser?.role || 'WAITER'}
               </p>
               <h2 className="font-serif text-base font-bold text-[#FDFBF7]">
-                Nguyễn Văn Nam • Ca Tối
+                {currentUser?.fullName || currentUser?.email || 'Nguyễn Văn Nam'} • {currentUser?.phone || 'Ca Trực'}
               </h2>
             </div>
             {onNavigateToHost && (
@@ -376,13 +454,7 @@ export const WaitstaffMobilePage: React.FC<WaitstaffMobilePageProps> = ({
 
           {/* Category Chips */}
           <div className="flex gap-1.5 overflow-x-auto scrollbar-none pb-0.5">
-            {[
-              { id: 'ALL', label: 'Tất Cả' },
-              { id: 'Set Menu & Combo', label: '🌟 Set Combo' },
-              { id: 'Bò Dry-Aged & Món Chính', label: '🥩 Bò & Steak' },
-              { id: 'Rượu Vang & Champagne', label: '🍷 Rượu Vang' },
-              { id: 'Khai Vị & Tráng Miệng', label: '🍰 Tráng Miệng' },
-            ].map((cat) => (
+            {categoryTabs.map((cat) => (
               <button
                 key={cat.id}
                 type="button"
@@ -429,7 +501,7 @@ export const WaitstaffMobilePage: React.FC<WaitstaffMobilePageProps> = ({
             </div>
           )}
 
-          {SIGNATURE_DISHES
+          {dishesList
             .filter(
               (dish) =>
                 (selectedCategory === 'ALL' || dish.category === selectedCategory) &&
@@ -531,12 +603,17 @@ export const WaitstaffMobilePage: React.FC<WaitstaffMobilePageProps> = ({
 
               <button
                 type="button"
+                disabled={isSubmitting}
                 onClick={handleSendOrderToCashier}
-                className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-[#8C6A43] to-[#735534] hover:from-[#735534] hover:to-[#5E4428] text-white text-xs font-bold shadow-md flex items-center justify-between px-4 cursor-pointer active:scale-95 transition-all"
+                className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-[#8C6A43] to-[#735534] hover:from-[#735534] hover:to-[#5E4428] disabled:opacity-50 text-white text-xs font-bold shadow-md flex items-center justify-between px-4 cursor-pointer active:scale-95 transition-all"
               >
                 <div className="flex items-center gap-2">
-                  <Send className="w-4 h-4" />
-                  <span>Gửi Order Về Thu Ngân & Bếp</span>
+                  {isSubmitting ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Send className="w-4 h-4" />
+                  )}
+                  <span>{isSubmitting ? 'Đang gửi order...' : 'Gửi Order Về Thu Ngân & Bếp'}</span>
                 </div>
                 <span className="font-mono text-sm font-bold bg-white/20 px-2 py-0.5 rounded-lg">
                   {new Intl.NumberFormat('vi-VN').format(pendingTotal)} đ

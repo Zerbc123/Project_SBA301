@@ -31,13 +31,17 @@ import {
   ShoppingBag,
   Trash2,
   Shirt,
+  QrCode,
+  Download,
 } from 'lucide-react';
 import type { TableItem, SignatureDish, BookingDetails } from '../types';
 import { SIGNATURE_DISHES } from '../data/mockData';
 import { QRPaymentModal } from '../components/common/QRPaymentModal';
+import { ETicketModal } from '../components/booking/ETicketModal';
 import {
   bookingApi,
   ensureUUID,
+  getDishUUID,
   SEED_DATA,
   type CreateBookingRequestPayload,
 } from '../services/bookingApi';
@@ -197,8 +201,9 @@ export const BookingPage: React.FC<BookingPageProps> = ({
   const [customerPhone, setCustomerPhone] = useState<string>('0909123456');
   const [customerEmail, setCustomerEmail] = useState<string>('baoanh.nguyen@gmail.com');
 
-  // Payment modal state
+  // Payment & E-Ticket modal state
   const [isQRModalOpen, setIsQRModalOpen] = useState<boolean>(false);
+  const [isETicketModalOpen, setIsETicketModalOpen] = useState<boolean>(false);
   const [currentBooking, setCurrentBooking] = useState<BookingDetails | null>(null);
   const [bookingSuccess, setBookingSuccess] = useState<BookingDetails | null>(null);
   const [backendBookingUUID, setBackendBookingUUID] = useState<string>('');
@@ -278,6 +283,7 @@ export const BookingPage: React.FC<BookingPageProps> = ({
 
     setIsSubmitting(true);
     let realBookingCode = `BK-${Math.floor(1000 + Math.random() * 9000)}`;
+    let createdUUID = '';
 
     // GỌI BACKEND THẬT QUA REST API: POST /api/v1/bookings/request
     try {
@@ -289,10 +295,12 @@ export const BookingPage: React.FC<BookingPageProps> = ({
         timeSlotId: SEED_DATA.TIME_SLOT_ID,
         guestCount: partySize,
         tableIds: [tableUUID],
+        occasion: selectedOccasion || undefined,
         specialNotes: fullNotes,
-        totalDeposit: depositRequired,
+        totalDeposit: grandTotal,
         preorderItems: preOrderItems.map((p) => ({
-          menuItemId: SEED_DATA.MENU_ITEM_ID,
+          menuItemId: getDishUUID(p.dish.id),
+          itemName: p.dish.name,
           quantity: p.quantity,
           unitPrice: p.dish.price,
         })),
@@ -301,6 +309,7 @@ export const BookingPage: React.FC<BookingPageProps> = ({
       const res = await bookingApi.createBooking(payload);
       if (res.success && res.data) {
         realBookingCode = res.data.bookingCode;
+        createdUUID = res.data.id;
         setBackendBookingUUID(res.data.id);
         console.log('✅ [Backend API] Đã tạo thành công đơn đặt bàn trên PostgreSQL:', res.data);
       }
@@ -312,6 +321,8 @@ export const BookingPage: React.FC<BookingPageProps> = ({
 
     const newBooking: BookingDetails = {
       bookingId: realBookingCode,
+      bookingCode: realBookingCode,
+      backendUUID: createdUUID || undefined,
       customerName,
       phone: customerPhone,
       email: customerEmail || 'customer@leprimebistro.vn',
@@ -321,9 +332,10 @@ export const BookingPage: React.FC<BookingPageProps> = ({
       tableId: assignedTable.id,
       date: selectedDate,
       timeSlot: effectiveTimeSlot,
+      occasion: selectedOccasion || undefined,
       notes: fullNotes,
       preOrders: preOrderItems,
-      depositAmount: depositRequired,
+      depositAmount: grandTotal,
       totalEstimatedAmount: grandTotal,
       createdAt: 'Vừa xong',
       status: 'PENDING_DEPOSIT',
@@ -336,18 +348,14 @@ export const BookingPage: React.FC<BookingPageProps> = ({
 
   const handlePaymentSuccess = async () => {
     if (currentBooking) {
-      // GỌI BACKEND THẬT: DUYỆT ĐƠN VÀ XÁC NHẬN CỌC
-      if (backendBookingUUID) {
+      const targetBookingId = currentBooking.backendUUID || backendBookingUUID;
+      // GỌI BACKEND THẬT: XÁC NHẬN THANH TOÁN CỌC -> CHUYỂN SANG CONFIRMED & CẤP MÃ QR 64 KÝ TỰ
+      if (targetBookingId) {
         try {
-          const res = await bookingApi.approveAndRequestDeposit(
-            backendBookingUUID,
-            depositRequired,
-            60,
-            'Khách đã thanh toán cọc thành công qua VietQR'
-          );
-          console.log('✅ [Backend API] Duyệt cọc đơn thành công:', res.data);
+          const res = await bookingApi.confirmBookingPayment(targetBookingId);
+          console.log('✅ [Backend API] Xác nhận thanh toán cọc & phát hành Vé điện tử QR thành công:', res.data);
         } catch (err: any) {
-          console.warn('⚠️ [Backend API] Lỗi duyệt cọc trên backend:', err.message);
+          console.warn('⚠️ [Backend API] Lỗi xác nhận thanh toán cọc trên backend:', err.message);
         }
       }
 
@@ -358,6 +366,7 @@ export const BookingPage: React.FC<BookingPageProps> = ({
       onAddBooking(confirmedBooking);
       setBookingSuccess(confirmedBooking);
       setIsQRModalOpen(false);
+      setIsETicketModalOpen(true);
 
       const matched = findMatchingTable();
       if (matched) {
@@ -490,12 +499,33 @@ export const BookingPage: React.FC<BookingPageProps> = ({
                 </p>
               </div>
             </div>
-            <button
-              onClick={() => setBookingSuccess(null)}
-              className="px-5 py-2.5 bg-[#16A34A] text-white text-xs font-bold rounded-xl hover:bg-[#15803D] transition-colors shrink-0 cursor-pointer shadow-xs"
-            >
-              Đặt Thêm Bàn Mới
-            </button>
+            <div className="flex flex-wrap items-center gap-2.5 shrink-0">
+              <button
+                onClick={() => setIsETicketModalOpen(true)}
+                className="px-4 py-2.5 bg-amber-600 text-white text-xs font-bold rounded-xl hover:bg-amber-700 transition-colors cursor-pointer shadow-xs flex items-center gap-1.5"
+              >
+                <QrCode className="w-4 h-4" />
+                <span>Xem Vé E-Ticket / Mã QR</span>
+              </button>
+              <button
+                onClick={() =>
+                  bookingApi.downloadInvoicePdf(
+                    bookingSuccess.backendUUID || backendBookingUUID || SEED_DATA.BOOKING_ID,
+                    bookingSuccess.bookingId
+                  )
+                }
+                className="px-4 py-2.5 bg-white text-[#14532D] border border-[#86EFAC] text-xs font-bold rounded-xl hover:bg-[#DCFCE7] transition-colors cursor-pointer shadow-xs flex items-center gap-1.5"
+              >
+                <Download className="w-4 h-4" />
+                <span>Tải Hóa Đơn PDF</span>
+              </button>
+              <button
+                onClick={() => setBookingSuccess(null)}
+                className="px-4 py-2.5 bg-[#16A34A] text-white text-xs font-bold rounded-xl hover:bg-[#15803D] transition-colors cursor-pointer shadow-xs"
+              >
+                Đặt Thêm Bàn Mới
+              </button>
+            </div>
           </motion.div>
         )}
       </AnimatePresence>
@@ -1529,6 +1559,20 @@ export const BookingPage: React.FC<BookingPageProps> = ({
         onClose={() => setIsQRModalOpen(false)}
         booking={currentBooking}
         onPaymentSuccess={handlePaymentSuccess}
+      />
+
+      {/* E-Ticket Dynamic 64-Char QR Modal (UC-12) */}
+      <ETicketModal
+        isOpen={isETicketModalOpen}
+        onClose={() => setIsETicketModalOpen(false)}
+        bookingIdOrCode={
+          bookingSuccess?.backendUUID ||
+          currentBooking?.backendUUID ||
+          backendBookingUUID ||
+          bookingSuccess?.bookingId ||
+          currentBooking?.bookingId
+        }
+        initialBookingDetails={bookingSuccess || currentBooking}
       />
     </div>
   );

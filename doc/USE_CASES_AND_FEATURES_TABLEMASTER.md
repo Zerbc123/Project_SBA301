@@ -205,7 +205,7 @@ flowchart LR
 
     subgraph Sub_Analytics ["Báo cáo Doanh thu & Quản trị"]
         UC31["UC-31: Báo cáo Doanh thu, RevPASH & Tỷ lệ No-Show"]
-        UC32["UC-32: Bản đồ nhiệt Bàn ăn (Popularity Heatmap)"]
+        UC32["UC-32: Xếp hạng Độ Hot Thẻ Box Bàn (Table Box Heatmap Analytics)"]
     end
 
     subgraph Sub_Auto ["Tiến trình Tự động Ngầm"]
@@ -595,12 +595,12 @@ Dưới đây là đặc tả chi tiết của từng Use Case nghiệp vụ ch�
 
 ---
 
-### UC-32: Bản đồ Nhiệt Vị trí Bàn ăn (Table Popularity Heatmap)
-* **Tác nhân:** Restaurant Owner / Admin.
-* **Mô tả:** Trực quan hóa trực tiếp trên sơ đồ 2D của nhà hàng:
-  * Các bàn có tần suất khách đặt nhiều nhất được tô màu **Đỏ cam rực rỡ** (thường là bàn cạnh cửa kính ngắm phố hoặc góc sofa lãng mạn).
-  * Các bàn ít được khách chọn tô màu **Xanh nhạt** (thường là bàn cạnh lối đi bếp hoặc gần nhà vệ sinh).
-  * Giúp chủ nhà hàng đưa ra quyết định: Bố trí thêm vách ngăn cây xanh cho bàn ế ẩm, hoặc tăng tiền cọc đối với các bàn góc view đẹp.
+### UC-32: Phân tích Xếp hạng Độ Hot Bàn ăn Dạng Thẻ Box cho Quản Trị (Admin Table Box Heatmap & Popularity Analytics)
+* **Tác nhân:** Restaurant Owner / Admin (Chỉ hiển thị nội bộ trong Admin Studio, tuyệt đối không public ra ngoài cho khách).
+* **Mô tả:** Trực quan hóa dữ liệu kinh doanh dưới dạng Lưới Thẻ Box Bàn (Grid Cards) theo từng phân khu (`OUTDOOR`, `WINDOW_VIEW`, `PRIVATE_VIP`, `BAR_COUNTER`, `STANDARD`):
+  * Phân loại màu sắc thẻ bàn theo 4 cấp độ nhiệt: **HOT (Đỏ rực, Heat Score $\ge$ 75%)**, **WARM (Vàng cam, 50-74%)**, **NORMAL (Xanh lá, 25-49%)**, **COOL (Xanh lam, < 25%)**.
+  * Hiển thị chi tiết trên từng Box bàn: Tên bàn, khu vực Zone, tỷ lệ % Heat Score, tổng số lượt đặt thành công và tổng doanh thu thực tế sinh ra từ bàn đó.
+  * Giúp chủ nhà hàng đưa ra quyết định: Bố trí lại menu/khuyến mãi cho các bàn ít khách (COOL) hoặc tối ưu giá cọc và dịch vụ cho các bàn đắt khách (HOT).
 
 ---
 

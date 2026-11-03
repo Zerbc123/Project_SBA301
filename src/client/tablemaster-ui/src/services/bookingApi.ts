@@ -224,6 +224,7 @@ export interface TableStateUpdatePayload {
 
 // Fallback UUIDs từ Seed Data cơ sở dữ liệu
 export const SEED_DATA = {
+  BOOKING_ID: 'c0000000-0000-0000-0000-000000000001',
   USER_ID: 'a0000000-0000-0000-0000-000000000005', // Khách VIP
   STAFF_ID: 'a0000000-0000-0000-0000-000000000003', // Lễ tân
   TIME_SLOT_ID: 'b1000000-0000-0000-0000-000000000002', // Ca tối Giờ Vàng
@@ -339,19 +340,33 @@ export const bookingApi = {
     if (status) params.append('status', status);
 
     const url = params.toString() ? `${BASE_URL}?${params.toString()}` : BASE_URL;
-    const res = await fetch(url, {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-    });
+    try {
+      const res = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
 
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({ message: `Lỗi ${res.status}` }));
-      throw new Error(err.message || 'Không thể tải danh sách đơn đặt bàn');
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ message: `Lỗi ${res.status}` }));
+        console.warn('⚠️ [bookingApi] Backend offline hoặc chưa sẵn sàng:', err.message);
+        return {
+          success: false,
+          message: err.message || 'Backend offline',
+          data: [],
+        };
+      }
+
+      return await res.json();
+    } catch (e: any) {
+      console.warn('⚠️ [bookingApi] Không thể kết nối tới booking-service (8083), chuyển sang dữ liệu mẫu cục bộ:', e?.message || e);
+      return {
+        success: false,
+        message: 'Backend offline',
+        data: [],
+      };
     }
-
-    return res.json();
   },
 
   /**
@@ -359,9 +374,17 @@ export const bookingApi = {
    * GET /api/v1/bookings/{id}
    */
   async getBookingById(id: string): Promise<ApiResponse<BackendBooking>> {
-    const res = await fetch(`${BASE_URL}/${id}`);
-    if (!res.ok) throw new Error('Không tìm thấy đơn đặt bàn');
-    return res.json();
+    try {
+      const res = await fetch(`${BASE_URL}/${id}`);
+      if (!res.ok) throw new Error('Không tìm thấy đơn đặt bàn');
+      return await res.json();
+    } catch (e: any) {
+      return {
+        success: false,
+        message: e?.message || 'Không tìm thấy đơn đặt bàn',
+        data: null as any,
+      };
+    }
   },
 
   /**
@@ -370,20 +393,33 @@ export const bookingApi = {
    */
   async getMyBookings(userId?: string): Promise<ApiResponse<BackendBooking[]>> {
     const targetUserId = userId || SEED_DATA.USER_ID;
-    const res = await fetch(`${BASE_URL}/my-bookings`, {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-User-Id': targetUserId,
-      },
-    });
+    try {
+      const res = await fetch(`${BASE_URL}/my-bookings`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-User-Id': targetUserId,
+        },
+      });
 
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({ message: `Lỗi ${res.status}` }));
-      throw new Error(err.message || 'Không thể tải lịch sử đơn đặt bàn');
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ message: `Lỗi ${res.status}` }));
+        return {
+          success: false,
+          message: err.message || 'Không thể tải lịch sử đơn đặt bàn',
+          data: [],
+        };
+      }
+
+      return await res.json();
+    } catch (e: any) {
+      console.warn('⚠️ [bookingApi] Không thể kết nối backend /my-bookings:', e?.message || e);
+      return {
+        success: false,
+        message: 'Backend offline',
+        data: [],
+      };
     }
-
-    return res.json();
   },
 
   /**
@@ -436,6 +472,87 @@ export const bookingApi = {
     if (!res.ok) {
       const err = await res.json().catch(() => ({ message: 'Lỗi duyệt đơn' }));
       throw new Error(err.message || 'Lỗi duyệt đơn');
+    }
+
+    return res.json();
+  },
+
+  /**
+   * 4b. Xác nhận thanh toán tiền cọc thành công (Chuyển sang CONFIRMED & sinh QR 64 ký tự)
+   * POST /api/v1/bookings/{id}/confirm-payment
+   */
+  async confirmBookingPayment(id: string): Promise<ApiResponse<BackendBooking>> {
+    const res = await fetch(`${BASE_URL}/${id}/confirm-payment`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-User-Id': SEED_DATA.USER_ID,
+      },
+    });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ message: 'Lỗi xác nhận thanh toán cọc' }));
+      throw new Error(err.message || 'Lỗi xác nhận thanh toán cọc');
+    }
+
+    return res.json();
+  },
+
+  /**
+   * 4c. Khởi tạo giao dịch thanh toán cọc trên payment-service (UC-11)
+   * POST /api/v1/payments/momo/create
+   */
+  async createMomoPayment(payload: {
+    bookingId: string;
+    userId?: string;
+    amount: number;
+    orderInfo?: string;
+  }): Promise<ApiResponse<{
+    orderId: string;
+    requestId: string;
+    amount: number;
+    payUrl?: string;
+    deeplink?: string;
+    qrCodeUrl?: string;
+    resultCode: number;
+    message: string;
+  }>> {
+    const res = await fetch('/api/v1/payments/momo/create', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        bookingId: ensureUUID(payload.bookingId, SEED_DATA.BOOKING_ID),
+        userId: payload.userId || SEED_DATA.USER_ID,
+        amount: payload.amount,
+        orderInfo: payload.orderInfo || `Thanh toan coc giu ban TableMaster`,
+      }),
+    });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ message: `Lỗi khởi tạo thanh toán (${res.status})` }));
+      throw new Error(err.message || 'Không thể khởi tạo giao dịch thanh toán');
+    }
+
+    return res.json();
+  },
+
+  /**
+   * 4d. Kích hoạt giả lập Webhook IPN thanh toán thành công trên payment-service (UC-11)
+   * POST /api/v1/payments/momo/mock-ipn/{transactionCode}
+   */
+  async triggerMomoMockIpn(transactionCode: string): Promise<ApiResponse<string>> {
+    const res = await fetch(`/api/v1/payments/momo/mock-ipn/${encodeURIComponent(transactionCode)}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ message: `Lỗi xác thực IPN (${res.status})` }));
+      throw new Error(err.message || 'Không thể xác thực IPN');
     }
 
     return res.json();
@@ -516,21 +633,29 @@ export const bookingApi = {
    * POST /api/v1/bookings/{id}/transfer-table
    */
   async transferTable(id: string, sourceTableId: string, targetTableId: string, reason?: string): Promise<ApiResponse<BackendBooking>> {
-    const res = await fetch(`${BASE_URL}/${id}/transfer-table`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-User-Id': SEED_DATA.STAFF_ID,
-      },
-      body: JSON.stringify({
-        sourceTableId: ensureUUID(sourceTableId),
-        targetTableId: ensureUUID(targetTableId),
-        reason: reason || 'Khách yêu cầu chuyển bàn',
-      }),
-    });
+    try {
+      const res = await fetch(`${BASE_URL}/${ensureUUID(id)}/transfer-table`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-User-Id': SEED_DATA.STAFF_ID,
+        },
+        body: JSON.stringify({
+          sourceTableId: ensureUUID(sourceTableId),
+          targetTableId: ensureUUID(targetTableId),
+          reason: reason || 'Khách yêu cầu chuyển bàn',
+        }),
+      });
 
-    if (!res.ok) throw new Error('Chuyển bàn thất bại');
-    return res.json();
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ message: 'Chuyển bàn thất bại' }));
+        return { success: false, message: err.message || 'Chuyển bàn thất bại', data: null as any };
+      }
+      return await res.json();
+    } catch (e: any) {
+      console.warn('⚠️ [bookingApi] transferTable backend offline:', e?.message || e);
+      return { success: false, message: 'Backend offline', data: null as any };
+    }
   },
 
   /**
@@ -556,7 +681,7 @@ export const bookingApi = {
   },
 
   /**
-   * 10. Phục vụ gọi thêm món tại bàn
+   * 10. Phục vụ gọi thêm món tại bàn (UC-31 Waitstaff Mobile POS)
    * POST /api/v1/bookings/{id}/table-orders
    */
   async addTableOrders(id: string, tableId: string, items: Array<{
@@ -566,20 +691,32 @@ export const bookingApi = {
     unitPrice: number;
     notes?: string;
   }>) {
-    const res = await fetch(`${BASE_URL}/${id}/table-orders`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-User-Id': SEED_DATA.STAFF_ID,
-      },
-      body: JSON.stringify({
-        tableId: ensureUUID(tableId),
-        items,
-      }),
-    });
+    try {
+      const res = await fetch(`${BASE_URL}/${ensureUUID(id)}/table-orders`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-User-Id': SEED_DATA.STAFF_ID,
+        },
+        body: JSON.stringify({
+          tableId: ensureUUID(tableId),
+          items: items.map((i) => ({
+            ...i,
+            menuItemId: i.menuItemId && i.menuItemId.includes('-') && i.menuItemId.length === 36 ? i.menuItemId : undefined,
+          })),
+        }),
+      });
 
-    if (!res.ok) throw new Error('Gọi món thất bại');
-    return res.json();
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ message: `Lỗi ${res.status}` }));
+        console.warn('⚠️ [bookingApi] addTableOrders không thành công:', err.message);
+        return { success: false, message: err.message || 'Gọi món thất bại', data: [] };
+      }
+      return await res.json();
+    } catch (e: any) {
+      console.warn('⚠️ [bookingApi] Lỗi kết nối addTableOrders:', e?.message || e);
+      return { success: false, message: 'Backend offline', data: [] };
+    }
   },
 
   /**

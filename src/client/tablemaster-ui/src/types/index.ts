@@ -52,6 +52,7 @@ export interface PreOrderItem {
 export interface BookingDetails {
   bookingId: string;
   bookingCode?: string;
+  backendUUID?: string;
   customerName: string;
   phone: string;
   email: string;

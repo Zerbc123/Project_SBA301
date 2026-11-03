@@ -21,7 +21,7 @@ import { AdminStudioPage } from './views/AdminStudioPage';
 import { RestaurantManagementPage } from './views/restaurant/RestaurantManagementPage';
 import { INITIAL_TABLES, INITIAL_BOOKINGS, INITIAL_TABLE_ORDERS } from './data/mockData';
 import type { TableItem, TableStatus, BookingDetails, TableOrderRecord, AuthUser } from './types';
-import { bookingApi, type BackendBooking } from './services/bookingApi';
+import { bookingApi, type BackendBooking, SEED_DATA } from './services/bookingApi';
 import { PrivateBanquetModal } from './components/booking/PrivateBanquetModal';
 import { authStorage } from './services/authStorage';
 
@@ -103,6 +103,8 @@ export function App() {
           if (res.data.length > 0) {
             const mapped: BookingDetails[] = res.data.map((b: BackendBooking) => ({
               bookingId: b.bookingCode || b.id.substring(0, 8),
+              bookingCode: b.bookingCode,
+              backendUUID: b.id,
               customerName: b.guestName,
               phone: b.guestPhone,
               email: b.guestEmail,
@@ -219,7 +221,7 @@ export function App() {
     setBookings((prev) => [newBooking, ...prev]);
   };
 
-  const handleAddItemsToTable = (
+  const handleAddItemsToTable = async (
     tableId: string,
     newItems: { dishId: string; name: string; price: number; quantity: number; notes?: string; category: string }[]
   ) => {
@@ -229,6 +231,7 @@ export function App() {
       handleUpdateTableStatus(tableId, 'SEATED', 'Khách Tại Bàn');
     }
 
+    // 1. Cập nhật state in-memory ngay lập tức
     setTableOrders((prev) => {
       const current = prev[tableId] || {
         tableCode: targetTable?.code || 'Bàn',
@@ -271,9 +274,32 @@ export function App() {
         },
       };
     });
+
+    // 2. Gửi API thật xuống backend booking-service (UC-31 Mobile Waitstaff Orders)
+    try {
+      const activeBooking = bookings.find(
+        (b) => b.tableId === tableId || (targetTable && b.tableCode === targetTable.code)
+      );
+      const bookingTargetId = activeBooking?.backendUUID || activeBooking?.bookingId || SEED_DATA.BOOKING_ID;
+
+      await bookingApi.addTableOrders(
+        bookingTargetId,
+        tableId,
+        newItems.map((i) => ({
+          menuItemId: i.dishId,
+          itemName: i.name,
+          quantity: i.quantity,
+          unitPrice: i.price,
+          notes: i.notes,
+        }))
+      );
+      console.log('✅ [App] Đã đồng bộ order món từ Waitstaff Mobile xuống backend booking-service (8083)');
+    } catch (err) {
+      console.warn('⚠️ [App] Chưa thể đồng bộ order món với backend:', err);
+    }
   };
 
-  const handleTransferTable = (sourceTableId: string, targetTableId: string) => {
+  const handleTransferTable = async (sourceTableId: string, targetTableId: string) => {
     const sourceTable = tables.find((t) => t.id === sourceTableId);
     const targetTable = tables.find((t) => t.id === targetTableId);
     if (!sourceTable || !targetTable) return;
@@ -315,9 +341,24 @@ export function App() {
       }
       return copy;
     });
+
+    // Đồng bộ chuyển bàn xuống backend booking-service (UC-19)
+    try {
+      const activeBooking = bookings.find((b) => b.tableId === sourceTableId);
+      const bookingTargetId = activeBooking?.backendUUID || activeBooking?.bookingId || SEED_DATA.BOOKING_ID;
+      await bookingApi.transferTable(
+        bookingTargetId,
+        sourceTableId,
+        targetTableId,
+        `Chuyển từ ${sourceTable.code} sang ${targetTable.code}`
+      );
+      console.log('✅ [App] Đã đồng bộ chuyển bàn xuống backend booking-service (8083)');
+    } catch (err) {
+      console.warn('⚠️ [App] Chưa thể đồng bộ chuyển bàn với backend:', err);
+    }
   };
 
-  const handleMergeTables = (sourceTableId: string, targetTableId: string) => {
+  const handleMergeTables = async (sourceTableId: string, targetTableId: string) => {
     const sourceTable = tables.find((t) => t.id === sourceTableId);
     const targetTable = tables.find((t) => t.id === targetTableId);
     if (!sourceTable || !targetTable) return;
@@ -381,6 +422,21 @@ export function App() {
 
       return copy;
     });
+
+    // Đồng bộ gộp bàn (UC-20 Smart Table Merging)
+    try {
+      const activeBooking = bookings.find((b) => b.tableId === sourceTableId);
+      const bookingTargetId = activeBooking?.backendUUID || activeBooking?.bookingId || SEED_DATA.BOOKING_ID;
+      await bookingApi.transferTable(
+        bookingTargetId,
+        sourceTableId,
+        targetTableId,
+        `Gộp món từ ${sourceTable.code} sang ${targetTable.code}`
+      );
+      console.log('✅ [App] Đã đồng bộ gộp bàn xuống backend booking-service (8083)');
+    } catch (err) {
+      console.warn('⚠️ [App] Chưa thể đồng bộ gộp bàn với backend:', err);
+    }
   };
 
   return (
@@ -491,6 +547,7 @@ export function App() {
               <WaitstaffMobilePage
                 tables={tables}
                 tableOrders={tableOrders}
+                currentUser={currentUser}
                 onAddItemsToTable={handleAddItemsToTable}
                 onTransferTable={handleTransferTable}
                 onMergeTables={handleMergeTables}

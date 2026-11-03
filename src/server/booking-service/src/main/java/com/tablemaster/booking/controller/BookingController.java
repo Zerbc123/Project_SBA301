@@ -108,6 +108,17 @@ public class BookingController {
     }
 
     /**
+     * POST /api/v1/bookings/{id}/confirm-payment
+     * Xác nhận đơn đặt bàn đã hoàn tất thanh toán cọc (chuyển sang CONFIRMED & cấp mã QR động 64 ký tự)
+     */
+    @PostMapping("/{id}/confirm-payment")
+    public ResponseEntity<ApiResponse<BookingResponse>> confirmBookingAfterPayment(
+            @PathVariable UUID id) {
+        BookingResponse response = bookingService.confirmBookingAfterPayment(id);
+        return ResponseEntity.ok(ApiResponse.success("Xác nhận thanh toán cọc thành công! Đã phát hành Vé điện tử QR.", response));
+    }
+
+    /**
      * POST /api/v1/bookings/{id}/reject
      * Lễ tân từ chối đơn đặt bàn
      */
