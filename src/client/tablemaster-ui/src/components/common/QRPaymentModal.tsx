@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, CheckCircle2, Copy, Check, ShieldCheck, Zap, QrCode } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import type { BookingDetails } from '../../types';
+import { bookingApi, SEED_DATA } from '../../services/bookingApi';
 
 
 interface QRPaymentModalProps {
@@ -21,6 +22,43 @@ export const QRPaymentModal: React.FC<QRPaymentModalProps> = ({
   const [copiedField, setCopiedField] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
+  const [transactionCode, setTransactionCode] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!isOpen || !booking) {
+      setIsSuccess(false);
+      setIsProcessing(false);
+      setTransactionCode(null);
+      return;
+    }
+
+    setIsSuccess(false);
+    setIsProcessing(false);
+
+    // Khởi tạo giao dịch chờ thanh toán trên payment-service (UC-11)
+    let isMounted = true;
+    const initPaymentSession = async () => {
+      try {
+        const res = await bookingApi.createMomoPayment({
+          bookingId: booking.backendUUID || SEED_DATA.BOOKING_ID,
+          userId: SEED_DATA.USER_ID,
+          amount: booking.depositAmount,
+          orderInfo: `Thanh toan coc giu ban ${booking.bookingId} - ${booking.customerName}`,
+        });
+        if (isMounted && res.success && res.data?.orderId) {
+          setTransactionCode(res.data.orderId);
+          console.log('✅ [Payment Service] Khởi tạo giao dịch cọc thành công:', res.data);
+        }
+      } catch (err: any) {
+        console.warn('⚠️ [Payment Service] Không thể kết nối payment-service (8084), sử dụng chế độ QR trực tiếp:', err?.message || err);
+      }
+    };
+
+    initPaymentSession();
+    return () => {
+      isMounted = false;
+    };
+  }, [isOpen, booking?.bookingId, booking?.backendUUID, booking?.depositAmount]);
 
   if (!isOpen || !booking) return null;
 
@@ -30,8 +68,19 @@ export const QRPaymentModal: React.FC<QRPaymentModalProps> = ({
     setTimeout(() => setCopiedField(null), 2000);
   };
 
-  const handleSimulatePayment = () => {
+  const handleSimulatePayment = async () => {
     setIsProcessing(true);
+
+    // Kích hoạt Mock IPN trên payment-service để bắn Kafka event 'payment.success' sang booking-service
+    if (transactionCode) {
+      try {
+        await bookingApi.triggerMomoMockIpn(transactionCode);
+        console.log('✅ [Payment Service] Đã kích hoạt Mock IPN & bắn Kafka payment.success cho mã GD:', transactionCode);
+      } catch (err: any) {
+        console.warn('⚠️ [Payment Service] Lỗi kích hoạt Mock IPN (sẽ dùng REST fallback):', err?.message || err);
+      }
+    }
+
     setTimeout(() => {
       setIsProcessing(false);
       setIsSuccess(true);
@@ -43,8 +92,8 @@ export const QRPaymentModal: React.FC<QRPaymentModalProps> = ({
       });
       setTimeout(() => {
         onPaymentSuccess();
-      }, 1800);
-    }, 1200);
+      }, 1500);
+    }, 800);
   };
 
   // Format currency

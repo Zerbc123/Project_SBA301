@@ -25,7 +25,7 @@ public interface BookingService {
 
     BookingResponse rejectBooking(UUID bookingId, String reason, UUID staffId);
 
-    void confirmBookingAfterPayment(UUID bookingId);
+    BookingResponse confirmBookingAfterPayment(UUID bookingId);
 
     BookingResponse checkIn(CheckInRequest request);
 

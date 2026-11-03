@@ -131,22 +131,26 @@ public class BookingServiceImpl implements BookingService {
         }
 
         // Tính tổng tiền cọc cộng dồn: Tiền cọc giữ bàn + Tiền cọc các món Signature đặt trước (UC-07)
-        BigDecimal tableDeposit;
+        BigDecimal standardTableDeposit = BigDecimal.valueOf(200000);
+        BigDecimal accumulatedTotalDeposit;
         if (request.getTotalDeposit() != null && request.getTotalDeposit().compareTo(BigDecimal.ZERO) > 0) {
-            if (request.getTotalDeposit().compareTo(preorderTotal) >= 0) {
-                // Client đã gửi tổng cọc (gồm cọc bàn + cọc món)
-                tableDeposit = request.getTotalDeposit().subtract(preorderTotal);
+            if (preorderTotal.compareTo(BigDecimal.ZERO) > 0
+                    && request.getTotalDeposit().compareTo(preorderTotal.add(standardTableDeposit)) >= 0) {
+                // Client đã gửi tổng cọc cộng dồn (gồm cọc bàn + cọc món)
+                accumulatedTotalDeposit = request.getTotalDeposit();
             } else {
-                // Client gửi riêng khoản cọc bàn
-                tableDeposit = request.getTotalDeposit();
+                // Client gửi riêng khoản cọc bàn -> cộng thêm tiền cọc các món đặt trước
+                accumulatedTotalDeposit = request.getTotalDeposit().add(preorderTotal);
             }
         } else {
-            // Mức cọc bàn tiêu chuẩn Le Prime Bistro mặc định là 200,000 VND
-            tableDeposit = BigDecimal.valueOf(200000);
+            // Mức cọc bàn tiêu chuẩn Le Prime Bistro mặc định là 200,000 VND + tiền món đặt trước
+            accumulatedTotalDeposit = standardTableDeposit.add(preorderTotal);
         }
 
-        BigDecimal accumulatedTotalDeposit = tableDeposit.add(preorderTotal);
         savedBooking.setTotalDeposit(accumulatedTotalDeposit);
+        if (accumulatedTotalDeposit.compareTo(BigDecimal.ZERO) > 0 && savedBooking.getPaymentDeadline() == null) {
+            savedBooking.setPaymentDeadline(ZonedDateTime.now().plusMinutes(30));
+        }
 
         savedBooking = bookingRepository.save(savedBooking);
 
@@ -197,8 +201,8 @@ public class BookingServiceImpl implements BookingService {
         Booking booking = bookingRepository.findById(bookingId)
                 .orElseThrow(() -> new BookingNotFoundException(bookingId));
 
-        if (booking.getStatus() != BookingStatus.PENDING_REVIEW) {
-            throw new InvalidBookingStateException("Chỉ có thể duyệt đơn ở trạng thái PENDING_REVIEW. Hiện tại: " + booking.getStatus());
+        if (booking.getStatus() != BookingStatus.PENDING_REVIEW && booking.getStatus() != BookingStatus.AWAITING_PAYMENT) {
+            throw new InvalidBookingStateException("Chỉ có thể duyệt đơn ở trạng thái PENDING_REVIEW hoặc AWAITING_PAYMENT. Hiện tại: " + booking.getStatus());
         }
 
         booking.setReviewedByUserId(staffId);
@@ -264,16 +268,26 @@ public class BookingServiceImpl implements BookingService {
 
     @Override
     @Transactional
-    public void confirmBookingAfterPayment(UUID bookingId) {
+    public BookingResponse confirmBookingAfterPayment(UUID bookingId) {
         Booking booking = bookingRepository.findById(bookingId)
                 .orElseThrow(() -> new BookingNotFoundException(bookingId));
 
-        if (booking.getStatus() == BookingStatus.AWAITING_PAYMENT) {
+        if (booking.getStatus() == BookingStatus.CONFIRMED
+                && booking.getCheckinQrToken() != null
+                && booking.getCheckinQrToken().length() == 64) {
+            log.info("Booking {} is already CONFIRMED with 64-char QR token: {}", bookingId, booking.getCheckinQrToken());
+            return BookingResponse.fromEntity(booking);
+        }
+
+        if (booking.getStatus() == BookingStatus.AWAITING_PAYMENT
+                || booking.getStatus() == BookingStatus.PENDING_REVIEW
+                || booking.getStatus() == BookingStatus.CONFIRMED) {
             booking.setStatus(BookingStatus.CONFIRMED);
             String salt = booking.getQrSecretSalt() != null ? booking.getQrSecretSalt() : QrSecurityUtil.generateSecretSalt();
+            int counter = booking.getQrRotationCounter() != null ? booking.getQrRotationCounter() : 1;
             booking.setQrSecretSalt(salt);
-            booking.setQrRotationCounter(1);
-            booking.setCheckinQrToken(QrSecurityUtil.generate64CharToken(booking.getBookingCode(), salt, 1));
+            booking.setQrRotationCounter(counter);
+            booking.setCheckinQrToken(QrSecurityUtil.generate64CharToken(booking.getBookingCode(), salt, counter));
             booking.setTicketIssuedAt(ZonedDateTime.now());
             booking.setTicketZnsStatus("DELIVERED");
             booking.setTicketEmailStatus("SENT");
@@ -284,8 +298,10 @@ public class BookingServiceImpl implements BookingService {
             bookingEventProducer.publishZnsSent(saved, saved.getGuestPhone());
             bookingEventProducer.publishEmailSent(saved, saved.getGuestEmail());
             log.info("Booking {} confirmed after deposit payment. Generated 64-char QR token: {}", bookingId, saved.getCheckinQrToken());
+            return BookingResponse.fromEntity(saved);
         } else {
             log.warn("Booking {} is in state {}, cannot confirm after payment", bookingId, booking.getStatus());
+            return BookingResponse.fromEntity(booking);
         }
     }
 
