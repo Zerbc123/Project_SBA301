@@ -302,7 +302,7 @@ export function ensureUUID(val?: string, fallback: string = SEED_DATA.TABLES.WIN
   if (!val) return fallback;
   if (UUID_REGEX.test(val)) return val;
   if (TABLE_ID_MAP[val]) return TABLE_ID_MAP[val];
-  return fallback;
+  return val;
 }
 
 const BASE_URL = '/api/v1/bookings';
@@ -520,6 +520,56 @@ export const bookingApi = {
    * 7. Hoàn tất bữa ăn sau khi thanh toán xong
    * POST /api/v1/bookings/{id}/complete
    */
+  /**
+   * Xác nhận cọc thành công: Chuyển sang CONFIRMED và sinh vé QR check-in
+   * POST /api/v1/bookings/{id}/confirm-payment
+   */
+  async confirmPayment(id: string): Promise<ApiResponse<BackendBooking>> {
+    try {
+      const res = await fetch(`${BASE_URL}/${ensureUUID(id)}/confirm-payment`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-User-Id': SEED_DATA.STAFF_ID,
+        },
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ message: `Lỗi ${res.status}` }));
+        return { success: false, message: err.message || 'Xác nhận cọc thất bại', data: null as any };
+      }
+      return await res.json();
+    } catch (e: any) {
+      return { success: false, message: e.message || 'Lỗi kết nối confirmPayment', data: null as any };
+    }
+  },
+
+  /**
+   * Lấy danh sách món đã gọi tại bàn từ PostgreSQL table_order_items (UC-31)
+   * GET /api/v1/bookings/{id}/table-orders
+   */
+  async getTableOrders(id: string): Promise<ApiResponse<Array<{
+    id: string;
+    bookingId: string;
+    tableId: string;
+    menuItemId?: string;
+    itemName: string;
+    quantity: number;
+    unitPrice: number;
+    status: 'PREPARING' | 'SERVED' | 'CANCELLED';
+    notes?: string;
+    createdAt?: string;
+  }>>> {
+    try {
+      const res = await fetch(`${BASE_URL}/${ensureUUID(id)}/table-orders`);
+      if (!res.ok) {
+        return { success: false, message: 'Không thể tải món tại bàn', data: [] };
+      }
+      return await res.json();
+    } catch (e: any) {
+      return { success: false, message: e.message || 'Lỗi kết nối getTableOrders', data: [] };
+    }
+  },
+
   async completeBooking(id: string): Promise<ApiResponse<BackendBooking>> {
     const res = await fetch(`${BASE_URL}/${id}/complete`, {
       method: 'POST',

@@ -19,17 +19,23 @@ public interface BookingService {
 
     BookingResponse getBookingById(UUID id);
 
+    BookingResponse getBookingById(String idOrCode);
+
     List<BookingResponse> getBookingsByUserId(UUID userId);
 
-    BookingResponse approveAndRequestDeposit(UUID bookingId, ApproveDepositRequest request, UUID staffId);
+    BookingResponse approveAndRequestDeposit(String bookingIdOrCode, ApproveDepositRequest request, UUID staffId);
 
     BookingResponse rejectBooking(UUID bookingId, String reason, UUID staffId);
 
-    void confirmBookingAfterPayment(UUID bookingId);
+    void confirmBookingAfterPayment(String bookingIdOrCode);
 
     BookingResponse checkIn(CheckInRequest request);
 
     BookingResponse completeBooking(UUID bookingId);
+
+    BookingResponse completeBooking(String bookingIdOrCode);
+
+    BookingResponse checkInDirect(String bookingIdOrCode);
 
     BookingResponse cancelBooking(UUID bookingId, String reason, UUID userId);
 
@@ -43,7 +49,7 @@ public interface BookingService {
 
     List<BookingResponse> getEventInquiries();
 
-    BookingResponse updateEventConsultation(UUID bookingId, com.tablemaster.booking.dto.request.UpdateEventConsultationRequest request, UUID managerUserId);
+    BookingResponse updateEventConsultation(String bookingIdOrCode, com.tablemaster.booking.dto.request.UpdateEventConsultationRequest request, UUID managerUserId);
 
     // UC-12: Nhận Vé điện tử QR Check-in (E-Ticket with Dynamic QR Code)
     com.tablemaster.booking.dto.response.ETicketResponse getETicket(String bookingIdOrCode);

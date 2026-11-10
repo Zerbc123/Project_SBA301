@@ -61,6 +61,7 @@ title SƠ ĐỒ THỰC THỂ QUAN HỆ CSDL: tablemaster_booking
 
 enum BookingStatus {
   PENDING_REVIEW   : Đơn mới từ web, chờ Lễ tân gọi
+  EVENT_INQUIRY    : Đơn đặt tiệc đoàn đông / sự kiện VIP (UC-10), chờ Quản lý tư vấn trong 15p
   AWAITING_PAYMENT : Lễ tân đã gọi chốt, chờ khách cọc
   CONFIRMED        : Đã cọc VietQR, ĐÃ GỬI VÉ QR EMAIL
   SEATED           : Lễ tân quét QR check-in khách vào bàn
@@ -278,7 +279,11 @@ skinparam state {
 
 title SƠ ĐỒ CHUYỂN DỊCH TRẠNG THÁI ĐƠN ĐẶT BÀN (BOOKING STATE MACHINE)
 
-[*] --> PENDING_REVIEW : Khách gửi đơn trên Web
+[*] --> PENDING_REVIEW : Khách gửi đơn đặt bàn lẻ trên Web
+[*] --> EVENT_INQUIRY : Khách gửi form đặt tiệc đoàn đông / sự kiện VIP (UC-10)
+
+EVENT_INQUIRY --> AWAITING_PAYMENT : Quản lý ca gọi tư vấn thành công (SLA 15p) & chốt cọc
+EVENT_INQUIRY --> REJECTED : Khách đổi ý hoặc nhà hàng kín lịch tổ chức
 
 PENDING_REVIEW --> AWAITING_PAYMENT : Lễ tân gọi điện OK\n& Gửi link cọc VietQR
 PENDING_REVIEW --> REJECTED : Gọi 3 lần ko nghe máy\nhoặc Khách đổi ý

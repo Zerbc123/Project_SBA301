@@ -7,8 +7,7 @@ import {
   MapPin,
   AlertTriangle,
   Lock,
-  Layers,
-  Compass,
+    Compass,
   Check,
   Building2,
   RefreshCw,
@@ -63,7 +62,7 @@ export const AvailabilitySearchEngine: React.FC<AvailabilitySearchEngineProps> =
   );
   const [adults, setAdults] = useState<number>(() => Math.max(1, initialPartySize >= 2 ? initialPartySize : 2));
   const [children, setChildren] = useState<number>(0);
-  const [selectedFloor, setSelectedFloor] = useState<number | undefined>(initialFloor);
+  const [selectedFloor] = useState<number | undefined>(initialFloor);
   const [selectedZone, setSelectedZone] = useState<string>('ALL');
   const [onlyAvailable, setOnlyAvailable] = useState<boolean>(false);
 
@@ -315,46 +314,7 @@ export const AvailabilitySearchEngine: React.FC<AvailabilitySearchEngineProps> =
           <p className="text-[10px] text-[#78716C] italic">Trẻ em tính vào tổng sức chứa (BR-01)</p>
         </div>
 
-        {/* 4. Bộ Lọc Tầng (Floor) (3 cols) */}
-        <div className="md:col-span-3 space-y-2">
-          <label className="text-xs font-bold uppercase tracking-wider text-[#6B5E54] flex items-center justify-between">
-            <span className="flex items-center gap-1.5">
-              <Layers className="w-3.5 h-3.5 text-[#C4A480]" />
-              <span>Chọn Tầng:</span>
-            </span>
-          </label>
-          <div className="grid grid-cols-4 gap-1">
-            {[
-              { id: undefined, label: 'Tất cả' },
-              { id: 1, label: 'Tầng 1' },
-              { id: 2, label: 'Tầng 2' },
-              { id: 3, label: 'Tầng 3' },
-            ].map((f) => (
-              <button
-                key={f.label}
-                type="button"
-                onClick={() => setSelectedFloor(f.id)}
-                className={`py-2 rounded-xl text-xs font-bold transition-all cursor-pointer text-center border ${
-                  selectedFloor === f.id
-                    ? 'bg-[#8C6A43] text-white border-[#8C6A43] shadow-xs'
-                    : 'bg-white text-[#6B5E54] border-[#E8DFD1] hover:bg-[#FAF4EB]'
-                }`}
-              >
-                {f.label}
-              </button>
-            ))}
-          </div>
-          <p className="text-[10px] text-[#78716C] truncate">
-            {selectedFloor === 1
-              ? 'Tầng 1: Sảnh Chính & Bar'
-              : selectedFloor === 2
-                ? 'Tầng 2: Phòng VIP Riêng Tư'
-                : selectedFloor === 3
-                  ? 'Tầng 3: Sky Lounge Ngoài Trời'
-                  : 'Toàn bộ 3 tầng không gian'}
-          </p>
         </div>
-      </div>
 
       {/* SECONDARY FILTER BAR: ZONE TYPE & ONLY-AVAILABLE TOGGLE */}
       <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-[#E8DFD1]/80">

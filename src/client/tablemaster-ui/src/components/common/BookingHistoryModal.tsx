@@ -17,8 +17,10 @@ import {
 } from 'lucide-react';
 import type { BookingDetails, AuthUser } from '../../types';
 import { SIGNATURE_DISHES } from '../../data/mockData';
-import { bookingApi, type BackendBooking } from '../../services/bookingApi';
+import { bookingApi, type BackendBooking, SEED_DATA } from '../../services/bookingApi';
 import { ETicketModal } from '../booking/ETicketModal';
+import { QRPaymentModal } from './QRPaymentModal';
+import { CreditCard, PhoneCall } from 'lucide-react';
 
 interface BookingHistoryModalProps {
   isOpen: boolean;
@@ -45,6 +47,7 @@ export const BookingHistoryModal: React.FC<BookingHistoryModalProps> = ({
 
   // State cho Ticket QR Modal xem lại vé check-in
   const [selectedTicketBooking, setSelectedTicketBooking] = useState<BookingDetails | null>(null);
+  const [payingBooking, setPayingBooking] = useState<BookingDetails | null>(null);
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
@@ -54,26 +57,23 @@ export const BookingHistoryModal: React.FC<BookingHistoryModalProps> = ({
   useEffect(() => {
     if (!isOpen) return;
 
-    if (!currentUser) {
-      setBookingsList([]);
-      setLoading(false);
-      return;
-    }
-
     setLoading(true);
+    const targetUserId = currentUser?.id || SEED_DATA.USER_ID;
     bookingApi
-      .getMyBookings(currentUser?.id)
+      .getMyBookings(targetUserId)
       .then((res) => {
-        // Lọc các đơn localBookings chỉ thuộc về chính user hiện tại
-        const userLocals = localBookings.filter(
-          (local) =>
-            (currentUser.phone && local.phone === currentUser.phone) ||
-            (currentUser.email && local.email === currentUser.email)
-        );
+        const userLocals = currentUser
+          ? localBookings.filter(
+              (local) =>
+                (currentUser.phone && local.phone === currentUser.phone) ||
+                (currentUser.email && local.email === currentUser.email)
+            )
+          : localBookings;
 
-        if (res.success && Array.isArray(res.data)) {
+        if (res.success && Array.isArray(res.data) && res.data.length > 0) {
           const mapped: BookingDetails[] = res.data.map((b: BackendBooking) => ({
             bookingId: b.bookingCode || b.id.substring(0, 8),
+            bookingCode: b.bookingCode,
             customerName: b.guestName,
             phone: b.guestPhone,
             email: b.guestEmail,
@@ -108,17 +108,18 @@ export const BookingHistoryModal: React.FC<BookingHistoryModalProps> = ({
             depositAmount: Number(b.totalDeposit) || 0,
             totalEstimatedAmount: Number(b.totalDeposit) || 0,
             createdAt: b.createdAt ? new Date(b.createdAt).toLocaleString('vi-VN') : 'Hôm nay',
-            status: b.status === 'CONFIRMED' || b.status === 'SEATED' ? 'CONFIRMED' : 'PENDING_DEPOSIT',
+            status: b.status === 'CONFIRMED' || b.status === 'SEATED' ? 'CONFIRMED' : (b.status as any),
             vietqrCode: `TM ${b.bookingCode}`,
             checkinQrToken: b.checkinQrToken,
             backendUUID: b.id,
             rawStatus: b.status,
           }));
 
-          const existingCodes = new Set(mapped.map((m) => m.bookingId));
+          const existingCodes = new Set(mapped.map((m) => m.bookingCode || m.bookingId));
           const merged = [...mapped];
           userLocals.forEach((local) => {
-            if (!existingCodes.has(local.bookingId)) {
+            const code = local.bookingCode || local.bookingId;
+            if (!existingCodes.has(code)) {
               merged.push(local);
             }
           });
@@ -130,11 +131,13 @@ export const BookingHistoryModal: React.FC<BookingHistoryModalProps> = ({
       })
       .catch((err) => {
         console.warn('⚠️ Lỗi khi tải lịch sử đơn từ Backend:', err);
-        const userLocals = localBookings.filter(
-          (local) =>
-            (currentUser.phone && local.phone === currentUser.phone) ||
-            (currentUser.email && local.email === currentUser.email)
-        );
+        const userLocals = currentUser
+          ? localBookings.filter(
+              (local) =>
+                (currentUser.phone && local.phone === currentUser.phone) ||
+                (currentUser.email && local.email === currentUser.email)
+            )
+          : localBookings;
         setBookingsList(userLocals);
       })
       .finally(() => setLoading(false));
@@ -367,22 +370,46 @@ export const BookingHistoryModal: React.FC<BookingHistoryModalProps> = ({
                           <span className="font-mono text-sm font-bold text-[#8C6A43] bg-[#FAF4EB] px-2.5 py-1 rounded-lg border border-[#E8DFD1]">
                             {b.bookingId}
                           </span>
-                          <span
-                            className={`px-2.5 py-1 rounded-full text-[11px] font-bold flex items-center gap-1 ${
-                              isConfirmed
-                                ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                                : isCompleted
-                                ? 'bg-stone-100 text-stone-700 border border-stone-200'
-                                : 'bg-amber-50 text-amber-800 border border-amber-200'
-                            }`}
-                          >
-                            {isConfirmed ? (
-                              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                            ) : (
-                              <AlertCircle className="w-3.5 h-3.5 text-amber-600" />
-                            )}
-                            <span>{isConfirmed ? 'ĐÃ XÁC NHẬN CỌC' : isCompleted ? 'ĐÃ DÙNG BỮA XONG' : 'CHỜ DUYỆT / THANH TOÁN'}</span>
-                          </span>
+                          {(() => {
+                            if (isConfirmed) {
+                              return (
+                                <span className="px-2.5 py-1 rounded-full text-[11px] font-bold flex items-center gap-1 bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                                  <span>ĐÃ XÁC NHẬN CỌC</span>
+                                </span>
+                              );
+                            }
+                            if (isCompleted) {
+                              return (
+                                <span className="px-2.5 py-1 rounded-full text-[11px] font-bold flex items-center gap-1 bg-stone-100 text-stone-700 border border-stone-200">
+                                  <CheckCircle2 className="w-3.5 h-3.5 text-stone-600" />
+                                  <span>ĐÃ DÙNG BỮA XONG</span>
+                                </span>
+                              );
+                            }
+                            if (rawStatus === 'AWAITING_PAYMENT') {
+                              return (
+                                <span className="px-2.5 py-1 rounded-full text-[11px] font-bold flex items-center gap-1 bg-blue-50 text-blue-700 border border-blue-200 animate-pulse">
+                                  <CreditCard className="w-3.5 h-3.5 text-blue-600" />
+                                  <span>ĐÃ DUYỆT - CHỜ THANH TOÁN CỌC</span>
+                                </span>
+                              );
+                            }
+                            if (rawStatus === 'PENDING_REVIEW' || rawStatus === 'EVENT_INQUIRY') {
+                              return (
+                                <span className="px-2.5 py-1 rounded-full text-[11px] font-bold flex items-center gap-1 bg-amber-50 text-amber-800 border border-amber-200">
+                                  <Clock className="w-3.5 h-3.5 text-amber-600 animate-spin" />
+                                  <span>CHỜ LỄ TÂN GỌI TƯ VẤN (SLA 15 PHÚT)</span>
+                                </span>
+                              );
+                            }
+                            return (
+                              <span className="px-2.5 py-1 rounded-full text-[11px] font-bold flex items-center gap-1 bg-amber-50 text-amber-800 border border-amber-200">
+                                <AlertCircle className="w-3.5 h-3.5 text-amber-600" />
+                                <span>CHỜ XỬ LÝ</span>
+                              </span>
+                            );
+                          })()}
                         </div>
 
                         <div className="flex items-center gap-4 text-xs text-[#78716C]">
@@ -464,15 +491,34 @@ export const BookingHistoryModal: React.FC<BookingHistoryModalProps> = ({
 
                       {/* Action Buttons: 3 Tính năng trọng tâm UC-03 */}
                       <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
-                        {/* 1. Xem vé QR check-in */}
-                        <div className="flex items-center gap-2">
-                          <button
-                            onClick={() => setSelectedTicketBooking(b)}
-                            className="px-3.5 py-2 rounded-xl bg-[#FAF4EB] hover:bg-[#F2ECE1] border border-[#E8DFD1] text-[#8C6A43] text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer active:scale-95"
-                          >
-                            <QrCode className="w-4 h-4 text-[#8C6A43]" />
-                            <span>Xem Vé QR Check-in</span>
-                          </button>
+                        {/* 1. Xem vé QR check-in & Nút Thanh Toán Cọc */}
+                        <div className="flex flex-wrap items-center gap-2">
+                          {(rawStatus === 'AWAITING_PAYMENT' || rawStatus === 'PENDING_DEPOSIT') && (
+                            <button
+                              onClick={() => setPayingBooking(b)}
+                              className="px-4 py-2 rounded-xl bg-gradient-to-r from-amber-600 to-amber-700 hover:from-amber-700 hover:to-amber-800 text-white text-xs font-bold flex items-center gap-1.5 shadow-md transition-all cursor-pointer active:scale-95 animate-pulse"
+                            >
+                              <CreditCard className="w-4 h-4 text-amber-200" />
+                              <span>💳 Thanh Toán Cọc (VietQR / MoMo)</span>
+                            </button>
+                          )}
+
+                          {(rawStatus === 'PENDING_REVIEW' || rawStatus === 'EVENT_INQUIRY') && (
+                            <div className="px-3 py-1.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs font-medium flex items-center gap-1.5">
+                              <PhoneCall className="w-3.5 h-3.5 text-amber-600" />
+                              <span>Lễ tân đang chuẩn bị gọi tư vấn & gửi link cọc</span>
+                            </div>
+                          )}
+
+                          {isConfirmed && (
+                            <button
+                              onClick={() => setSelectedTicketBooking(b)}
+                              className="px-3.5 py-2 rounded-xl bg-[#FAF4EB] hover:bg-[#F2ECE1] border border-[#E8DFD1] text-[#8C6A43] text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer active:scale-95"
+                            >
+                              <QrCode className="w-4 h-4 text-[#8C6A43]" />
+                              <span>Xem Vé QR Check-in</span>
+                            </button>
+                          )}
 
                           {/* 2. Tải hóa đơn cọc điện tử PDF */}
                           <button
@@ -527,6 +573,27 @@ export const BookingHistoryModal: React.FC<BookingHistoryModalProps> = ({
         onClose={() => setSelectedTicketBooking(null)}
         bookingIdOrCode={(selectedTicketBooking as any)?.backendUUID || selectedTicketBooking?.bookingId}
         initialBookingDetails={selectedTicketBooking}
+      />
+      {/* ==================== POPUP THANH TOÁN CỌC VIETQR / MOMO ==================== */}
+      <QRPaymentModal
+        isOpen={!!payingBooking}
+        onClose={() => setPayingBooking(null)}
+        booking={payingBooking}
+        onPaymentSuccess={() => {
+          if (payingBooking) {
+            setBookingsList((prev) =>
+              prev.map((bk) =>
+                bk.bookingId === payingBooking.bookingId
+                  ? { ...bk, status: 'CONFIRMED', rawStatus: 'CONFIRMED' }
+                  : bk
+              )
+            );
+            showToast(`🎉 Đã thanh toán cọc thành công cho đơn ${payingBooking.bookingId}!`);
+            const updated = { ...payingBooking, status: 'CONFIRMED' as const, rawStatus: 'CONFIRMED' };
+            setPayingBooking(null);
+            setSelectedTicketBooking(updated);
+          }
+        }}
       />
     </AnimatePresence>
   );

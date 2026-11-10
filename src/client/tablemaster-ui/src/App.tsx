@@ -12,6 +12,7 @@ import { LoginModal } from './components/common/LoginModal';
 import { ProfileModal } from './components/common/ProfileModal';
 import { ReviewModal } from './components/common/ReviewModal';
 import { BookingHistoryModal } from './components/common/BookingHistoryModal';
+import { QRPaymentModal } from './components/common/QRPaymentModal';
 import { LandingPage } from './views/LandingPage';
 import { BookingPage } from './views/BookingPage';
 import { HostTabletPage } from './views/HostTabletPage';
@@ -50,6 +51,63 @@ export function App() {
   const [bookings, setBookings] = useState<BookingDetails[]>(INITIAL_BOOKINGS);
   const [tableOrders, setTableOrders] = useState<Record<string, TableOrderRecord>>(INITIAL_TABLE_ORDERS);
   const [isHistoryModalOpen, setIsHistoryModalOpen] = useState<boolean>(false);
+  const [directPayBooking, setDirectPayBooking] = useState<BookingDetails | null>(null);
+
+  // Tự động mở cổng thanh toán MoMo / VietQR cho đúng ID đơn khi khách click link từ Email
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const bookingParam = params.get('bookingId');
+    const actionParam = params.get('action');
+
+    if (actionParam === 'pay-deposit' || bookingParam) {
+      const targetCode = (bookingParam || '').trim();
+      console.log('🔗 [URL Direct Link] Mở cổng thanh toán cọc từ Email cho đơn:', targetCode);
+
+      if (targetCode) {
+        bookingApi
+          .getBookingById(targetCode)
+          .then((res) => {
+            if (res.success && res.data) {
+              const mapped = mapBackendBooking(res.data);
+              // Nếu đơn đã cọc (CONFIRMED), đang ăn (SEATED) hoặc đã hoàn tất (COMPLETED) -> không mở lại popup cọc
+              if (
+                mapped.status === 'CONFIRMED' ||
+                mapped.status === 'SEATED' ||
+                mapped.status === 'COMPLETED'
+              ) {
+                console.log('ℹ️ [URL Direct Link] Đơn này đã cọc hoặc đã hoàn tất, tự động dọn URL param.');
+                window.history.replaceState({}, document.title, window.location.pathname);
+                return;
+              }
+              setDirectPayBooking(mapped);
+              console.log('✅ [URL Direct Link] Đã lấy thành công đơn từ DB:', mapped);
+            } else {
+              fallbackDirectPay(targetCode);
+            }
+          })
+          .catch(() => {
+            fallbackDirectPay(targetCode);
+          });
+      } else {
+        setIsHistoryModalOpen(true);
+      }
+    }
+  }, []);
+
+  const fallbackDirectPay = (targetCode: string) => {
+    const found = bookings.find(
+      (b) => b.bookingCode === targetCode || b.bookingId === targetCode || b.backendUUID === targetCode
+    );
+    if (found) {
+      if (found.status === 'CONFIRMED' || found.status === 'SEATED' || found.status === 'COMPLETED') {
+        window.history.replaceState({}, document.title, window.location.pathname);
+        return;
+      }
+      setDirectPayBooking(found);
+    } else {
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
+  };
   const [isBanquetModalOpen, setIsBanquetModalOpen] = useState<boolean>(false);
   const [rebookData, setRebookData] = useState<BookingDetails | null>(null);
 
@@ -94,61 +152,243 @@ export function App() {
       });
   }, []);
 
+  const [newBookingAlert, setNewBookingAlert] = useState<{ code: string; name: string; guests: number } | null>(null);
+
+  // Bản đồ đối chiếu Table UUID PostgreSQL sang id & code bàn của sơ đồ sảnh
+  const UUID_TO_TABLE_INFO: Record<string, { id: string; code: string; floor: 1 | 2 | 3 }> = {
+    'b3000000-0000-0000-0000-000000000001': { id: 'f1-t01', code: 'T-01', floor: 1 },
+    'b3000000-0000-0000-0000-000000000002': { id: 'f1-t02', code: 'T-02', floor: 1 },
+    'b3000000-0000-0000-0000-000000000003': { id: 'f2-v01', code: 'VIP-01', floor: 2 },
+    'b3000000-0000-0000-0000-000000000004': { id: 'f1-t04', code: 'T-04', floor: 1 },
+    'b3000000-0000-0000-0000-000000000005': { id: 'f1-t05', code: 'T-05', floor: 1 },
+    'b3000000-0000-0000-0000-000000000006': { id: 'f1-t06', code: 'T-06', floor: 1 },
+    'b3000000-0000-0000-0000-000000000007': { id: 'f1-t07', code: 'T-07', floor: 1 },
+  };
+
+  // Helper map từ BackendBooking sang BookingDetails chuẩn hóa
+  const mapBackendBooking = (b: BackendBooking): BookingDetails => {
+    const rawTableId = b.tableIds && b.tableIds.length > 0 ? b.tableIds[0] : '';
+    const resolvedTable = rawTableId ? UUID_TO_TABLE_INFO[rawTableId] : null;
+    const tableId = resolvedTable ? resolvedTable.id : (rawTableId || 'f1-t01');
+    const tableCode = resolvedTable ? resolvedTable.code : (b.targetFloor === 3 ? 'Khu Sky Rooftop' : (b.targetFloor === 2 ? 'Khu Salon VIP' : 'Bàn T-01'));
+    const floor = resolvedTable ? resolvedTable.floor : ((b.targetFloor as any) || 1);
+
+    let arrivalTime = '19:00 - 21:00';
+    if (b.specialNotes) {
+      const match = b.specialNotes.match(/\[Giờ đến:\s*([^\]]+)\]/);
+      if (match) arrivalTime = match[1].trim();
+    }
+
+    return {
+      bookingId: b.bookingCode || b.id.substring(0, 8),
+      bookingCode: b.bookingCode,
+      backendUUID: b.id,
+      customerName: b.guestName,
+      phone: b.guestPhone,
+      email: b.guestEmail,
+      partySize: b.guestCount,
+      floor,
+      tableCode,
+      tableId,
+      date: b.bookingDate,
+      timeSlot: arrivalTime,
+      notes: b.specialNotes,
+      occasion: b.occasion,
+      dietaryNotes: b.dietaryNotes,
+      babyChairCount: b.babyChairCount,
+      candleSetup: b.candleSetup,
+      preOrders: [],
+      depositAmount: Number(b.totalDeposit) || 0,
+      totalEstimatedAmount: Number(b.totalDeposit) || 0,
+      createdAt: b.createdAt ? new Date(b.createdAt).toLocaleTimeString('vi-VN') : 'Hôm nay',
+      status: b.status as any,
+      rawStatus: b.status,
+      vietqrCode: `TM ${b.bookingCode}`,
+      eventType: b.eventType,
+      targetFloor: b.targetFloor,
+      companyName: b.companyName,
+      estimatedBudget: b.estimatedBudget ? Number(b.estimatedBudget) : undefined,
+      stageAudioRequired: b.stageAudioRequired,
+      decorationRequired: b.decorationRequired,
+      callbackDeadline: b.callbackDeadline,
+      managerCallStatus: b.managerCallStatus as any,
+      consultationNotes: b.consultationNotes,
+    };
+  };
+
+  // Cơ chế Tự Động Quét Đơn Mới (Auto-Polling Scanner mỗi 4 giây) - Không cần F5 lại trang
   useEffect(() => {
-    bookingApi
-      .getAllBookings()
-      .then((res: any) => {
-        if (res.success && Array.isArray(res.data)) {
-          console.log('✅ [App] Đã kết nối với Backend Spring Boot (8083)! Có', res.data.length, 'đơn trong DB');
-          if (res.data.length > 0) {
-            const mapped: BookingDetails[] = res.data.map((b: BackendBooking) => ({
-              bookingId: b.bookingCode || b.id.substring(0, 8),
-              bookingCode: b.bookingCode,
-              backendUUID: b.id,
-              customerName: b.guestName,
-              phone: b.guestPhone,
-              email: b.guestEmail,
-              partySize: b.guestCount,
-              floor: (b.targetFloor as any) || 1,
-              tableCode: b.tableIds && b.tableIds.length > 0 ? `Bàn VIP` : (b.targetFloor === 3 ? 'Rooftop Tầng 3' : 'Sảnh'),
-              tableId: b.tableIds && b.tableIds.length > 0 ? b.tableIds[0] : 'f1-t01',
-              date: b.bookingDate,
-              timeSlot: '19:00 - 21:00',
-              notes: b.specialNotes,
-              occasion: b.occasion,
-              dietaryNotes: b.dietaryNotes,
-              babyChairCount: b.babyChairCount,
-              candleSetup: b.candleSetup,
-              preOrders: [],
-              depositAmount: Number(b.totalDeposit) || 0,
-              totalEstimatedAmount: Number(b.totalDeposit) || 0,
-              createdAt: b.createdAt ? new Date(b.createdAt).toLocaleTimeString('vi-VN') : 'Hôm nay',
-              status: b.status === 'EVENT_INQUIRY'
-                ? 'EVENT_INQUIRY'
-                : b.status === 'CONFIRMED' || b.status === 'SEATED'
-                ? 'CONFIRMED'
-                : 'PENDING_DEPOSIT',
-              vietqrCode: `TM ${b.bookingCode}`,
-              eventType: b.eventType,
-              targetFloor: b.targetFloor,
-              companyName: b.companyName,
-              estimatedBudget: b.estimatedBudget ? Number(b.estimatedBudget) : undefined,
-              stageAudioRequired: b.stageAudioRequired,
-              decorationRequired: b.decorationRequired,
-              callbackDeadline: b.callbackDeadline,
-              managerCallStatus: b.managerCallStatus,
-              consultationNotes: b.consultationNotes,
-            }));
-            setBookings((prev) => {
-              const existingCodes = new Set(mapped.map((m) => m.bookingId));
-              return [...mapped, ...prev.filter((p) => !existingCodes.has(p.bookingId))];
+    let isMounted = true;
+
+    const pollBookings = async (isInitial = false) => {
+      try {
+        const res = await bookingApi.getAllBookings();
+        if (isMounted && res.success && Array.isArray(res.data) && res.data.length > 0) {
+          const mapped = res.data.map(mapBackendBooking);
+
+          // 1. Cập nhật state danh sách đơn đặt bàn (Bookings)
+          setBookings((prev) => {
+            if (!isInitial && prev.length > 0) {
+              const prevCodes = new Set(prev.map((p) => p.bookingCode || p.bookingId || p.backendUUID));
+              // Tìm các đơn mới ở trạng thái chờ tư vấn PENDING_REVIEW hoặc EVENT_INQUIRY
+              const freshOrders = mapped.filter(
+                (m) =>
+                  !prevCodes.has(m.bookingCode || m.bookingId || m.backendUUID) &&
+                  (m.status === 'PENDING_REVIEW' || m.status === 'EVENT_INQUIRY')
+              );
+
+              if (freshOrders.length > 0) {
+                const newest = freshOrders[0];
+                setNewBookingAlert({
+                  code: newest.bookingCode || newest.bookingId,
+                  name: newest.customerName,
+                  guests: newest.partySize,
+                });
+                setTimeout(() => setNewBookingAlert(null), 8000);
+              }
+            }
+
+            // Bảo toàn các đơn mới tạo cục bộ (PENDING_REVIEW vừa tạo) nếu DB chưa kịp nạp
+            const mappedCodes = new Set(mapped.map((m) => m.bookingCode || m.bookingId || m.backendUUID));
+            const recentLocalBookings = prev.filter(
+              (p) =>
+                !mappedCodes.has(p.bookingCode || p.bookingId || p.backendUUID) &&
+                p.createdAt === 'Vừa xong'
+            );
+
+            return [...recentLocalBookings, ...mapped];
+          });
+
+          // 2. Tự động đồng bộ trạng thái các BÀN (Tables) trên sơ đồ mặt bằng từ các đơn CONFIRMED / SEATED
+          setTables((prevTables) => {
+            let hasChanged = false;
+            const updated = prevTables.map((tbl) => {
+              // Tìm đơn active mới nhất khớp với bàn này
+              const activeBooking = mapped.find(
+                (bk) =>
+                  (bk.tableId === tbl.id || bk.tableCode === tbl.code) &&
+                  (bk.status === 'CONFIRMED' || bk.status === 'SEATED')
+              );
+
+              if (activeBooking) {
+                const targetStatus = activeBooking.status === 'SEATED' ? 'SEATED' : 'CONFIRMED';
+                if (
+                  tbl.status !== targetStatus ||
+                  tbl.currentGuestName !== activeBooking.customerName ||
+                  (tbl as any).bookingCode !== activeBooking.bookingCode
+                ) {
+                  hasChanged = true;
+                  return {
+                    ...tbl,
+                    status: targetStatus as TableStatus,
+                    currentGuestName: activeBooking.customerName,
+                    guestPhone: activeBooking.phone,
+                    arrivalSlot: activeBooking.timeSlot,
+                    depositAmount: activeBooking.depositAmount,
+                    bookingCode: activeBooking.bookingCode || activeBooking.bookingId,
+                  } as any;
+                }
+              } else if (tbl.status === 'SEATED' || tbl.status === 'CONFIRMED') {
+                // Đơn đã COMPLETED hoặc CANCELLED trong DB -> giải phóng bàn về AVAILABLE
+                const completedBooking = mapped.find(
+                  (bk) =>
+                    (bk.tableId === tbl.id || bk.tableCode === tbl.code) &&
+                    (bk.status === 'COMPLETED' || bk.status === 'CANCELLED')
+                );
+                if (
+                  completedBooking &&
+                  (tbl as any).bookingCode === (completedBooking.bookingCode || completedBooking.bookingId)
+                ) {
+                  hasChanged = true;
+                  return {
+                    ...tbl,
+                    status: 'AVAILABLE' as TableStatus,
+                    currentGuestName: undefined,
+                    guestPhone: undefined,
+                    bookingCode: undefined,
+                  };
+                }
+              }
+              return tbl;
             });
+            return hasChanged ? updated : prevTables;
+          });
+
+          // 3. Tự động đồng bộ các món đã gọi (Table Orders) từ PostgreSQL cho các bàn đang SEATED
+          const seatedBookings = mapped.filter((bk) => bk.status === 'SEATED');
+          const seatedTableIds = new Set(seatedBookings.map((sb) => sb.tableId || 'f1-t01'));
+
+          // Dọn dẹp tableOrders của các bàn đã hoàn tất (không còn SEATED)
+          setTableOrders((prevOrders) => {
+            let orderChanged = false;
+            const updated = { ...prevOrders };
+            for (const tableId of Object.keys(updated)) {
+              if (updated[tableId]?.source === 'ONLINE' && !seatedTableIds.has(tableId)) {
+                delete updated[tableId];
+                orderChanged = true;
+              }
+            }
+            return orderChanged ? updated : prevOrders;
+          });
+          for (const sbk of seatedBookings) {
+            const bId = sbk.backendUUID || sbk.bookingId;
+            if (bId) {
+              bookingApi.getTableOrders(bId).then((res) => {
+                if (res.success && res.data && res.data.length > 0) {
+                  const targetTableId = sbk.tableId || 'f1-t01';
+                  setTableOrders((prevOrders) => {
+                    const current = prevOrders[targetTableId] || {
+                      tableCode: sbk.tableCode || 'T-01',
+                      guestName: sbk.customerName || 'Khách Tại Bàn',
+                      source: 'ONLINE',
+                      guestCount: sbk.partySize || 2,
+                      seatedAtTime: 'Đang dùng bữa',
+                      depositAmount: sbk.depositAmount || 200000,
+                      items: [],
+                    };
+
+                    const loadedItems = res.data.map((it) => ({
+                      dishId: it.menuItemId || it.id,
+                      name: it.itemName,
+                      price: Number(it.unitPrice),
+                      quantity: it.quantity,
+                      status: (it.status === 'SERVED' ? 'SERVED' : 'PREPARING') as 'PREPARING' | 'SERVED',
+                      category: 'Món gọi thêm',
+                      notes: it.notes || '',
+                    }));
+
+                    return {
+                      ...prevOrders,
+                      [targetTableId]: {
+                        ...current,
+                        guestName: sbk.customerName,
+                        depositAmount: sbk.depositAmount || current.depositAmount,
+                        items: loadedItems,
+                      },
+                    };
+                  });
+                }
+              }).catch(() => {});
+            }
           }
         }
-      })
-      .catch((err: any) => {
-        console.warn('⚠️ [App] Chưa thể kết nối Backend:', err);
-      });
+      } catch (err: any) {
+        if (isInitial) console.warn('⚠️ [App Polling] Chưa thể kết nối Backend:', err);
+      }
+    };
+
+    // Quét ngay lần đầu
+    pollBookings(true);
+
+    // Chu kỳ quét tự động mỗi 4000ms (4 giây)
+    const intervalId = setInterval(() => {
+      pollBookings(false);
+    }, 4000);
+
+    return () => {
+      isMounted = false;
+      clearInterval(intervalId);
+    };
   }, []);
 
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
@@ -441,6 +681,53 @@ export function App() {
 
   return (
     <div className="min-h-screen flex flex-col bg-[#FDFBF7] text-[#0F172A] selection:bg-amber-100 selection:text-amber-900">
+            {/* Toast thông báo đơn đặt bàn mới tự động (Auto-Polling SLA 15 phút) */}
+      <AnimatePresence>
+        {newBookingAlert && (
+          <motion.div
+            initial={{ opacity: 0, y: -40, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -20, scale: 0.95 }}
+            className="fixed top-20 right-6 z-50 max-w-md p-4 bg-gradient-to-r from-purple-900 via-indigo-900 to-slate-900 text-white rounded-2xl shadow-2xl border-2 border-amber-400/80 flex items-start gap-3 backdrop-blur-md"
+          >
+            <div className="w-10 h-10 rounded-xl bg-amber-400 text-slate-900 flex items-center justify-center font-bold text-lg shrink-0 animate-bounce">
+              🛎️
+            </div>
+            <div className="flex-1 space-y-1">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] uppercase font-bold tracking-wider text-amber-300 bg-amber-400/20 px-2 py-0.5 rounded-full border border-amber-400/40">
+                  ⚡ ĐƠN MỚI CẦN GỌI GẤP
+                </span>
+                <span className="text-[10px] text-slate-300 font-mono">SLA 15 Phút</span>
+              </div>
+              <p className="text-xs font-bold text-white">
+                Khách: <span className="text-amber-200">{newBookingAlert.name}</span> (#{newBookingAlert.code})
+              </p>
+              <p className="text-[11px] text-slate-300">
+                Quy mô: <strong>{newBookingAlert.guests} khách</strong>. Đã tự động cập nhật vào danh sách Lễ tân!
+              </p>
+              <button
+                type="button"
+                onClick={() => {
+                  setNewBookingAlert(null);
+                  handleNavigate('host');
+                }}
+                className="mt-1 text-[11px] font-bold text-amber-300 hover:text-white underline cursor-pointer"
+              >
+                👉 Mở Màn Hình Lễ Tân Gọi Ngay
+              </button>
+            </div>
+            <button
+              type="button"
+              onClick={() => setNewBookingAlert(null)}
+              className="text-slate-400 hover:text-white p-1 cursor-pointer"
+            >
+              ✕
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Sticky Luxury Navbar */}
       <Navbar
         currentView={currentView}
@@ -511,7 +798,13 @@ export function App() {
                 onNavigateToKds={() => handleNavigate('kds')}
                 onUpdateBooking={(updated) => {
                   setBookings((prev) =>
-                    prev.map((b) => (b.bookingId === updated.bookingId ? updated : b))
+                    prev.map((b) =>
+                      b.bookingId === updated.bookingId ||
+                      (b.bookingCode && b.bookingCode === updated.bookingCode) ||
+                      (b.backendUUID && b.backendUUID === updated.backendUUID)
+                        ? updated
+                        : b
+                    )
                   );
                 }}
               />
@@ -624,9 +917,9 @@ export function App() {
             <div className="space-y-2 text-xs">
               <h4 className="font-serif font-bold text-sm text-[#1C1917]">Không Gian Ẩm Thực</h4>
               <ul className="space-y-1 text-[#78716C]">
-                <li>• Tầng 1: Grand Bistro & Quầy Mixology</li>
-                <li>• Tầng 2: Salon Tiệc VIP & Wine Cellar</li>
-                <li>• Tầng 3: Sky Terrace Rooftop hoàng hôn</li>
+                <li>• Khu Grand Bistro: Bàn Cửa Sổ & Quầy Bar Mixology</li>
+                <li>• Khu Salon VIP: Phòng Tiệc Riêng Tư & Wine Cellar</li>
+                <li>• Khu Sky Terrace: Sân Vườn Ngoài Trời Hoàng Hôn</li>
               </ul>
             </div>
 
@@ -710,6 +1003,33 @@ export function App() {
         onRebook={(booking) => {
           setRebookData(booking);
           handleNavigate('booking');
+        }}
+      />
+
+      {/* CỔNG THANH TOÁN CỌC TRỰC TIẾP TỪ EMAIL (MOMO / VIETQR) */}
+      <QRPaymentModal
+        isOpen={!!directPayBooking}
+        onClose={() => {
+          setDirectPayBooking(null);
+          window.history.replaceState({}, document.title, window.location.pathname);
+        }}
+        booking={directPayBooking}
+        initialTab="MOMO"
+        onPaymentSuccess={() => {
+          if (directPayBooking) {
+            const targetCode = directPayBooking.bookingCode || directPayBooking.bookingId;
+            setBookings((prev) =>
+              prev.map((b) =>
+                b.bookingCode === targetCode ||
+                b.bookingId === targetCode ||
+                b.backendUUID === directPayBooking.backendUUID
+                  ? { ...b, status: 'CONFIRMED' as const, rawStatus: 'CONFIRMED' }
+                  : b
+              )
+            );
+          }
+          setDirectPayBooking(null);
+          window.history.replaceState({}, document.title, window.location.pathname);
         }}
       />
 

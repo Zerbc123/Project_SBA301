@@ -30,7 +30,7 @@ public class PaymentEventConsumer {
             JsonNode root = objectMapper.readTree(message);
             if (root.has("bookingId")) {
                 UUID bookingId = UUID.fromString(root.get("bookingId").asText());
-                bookingService.confirmBookingAfterPayment(bookingId);
+                bookingService.confirmBookingAfterPayment(bookingId.toString());
                 log.info("Successfully processed payment success for booking ID: {}", bookingId);
             }
         } catch (Exception e) {

@@ -72,9 +72,10 @@ export const HostTabletPage: React.FC<HostTabletPageProps> = ({
   onNavigateToKds,
   onUpdateBooking,
 }) => {
-  // UC-15: Sơ Đồ Sàn Live Đa Tầng Trên Tablet
-  const [selectedFloor, setSelectedFloor] = useState<1 | 2 | 3 | 'ALL'>(1);
-  const [viewMode, setViewMode] = useState<'canvas' | 'cards'>('canvas');
+  // UC-27 & UC-05: Phân Khu Trải Nghiệm (Zone-Based Seating) & Lưới Thẻ Bàn
+  const [selectedFloor] = useState<1 | 2 | 3 | 'ALL'>('ALL');
+  const [selectedZone, setSelectedZone] = useState<string>('ALL');
+  const [viewMode, setViewMode] = useState<'canvas' | 'cards'>('cards');
   const [hostFloorLive, setHostFloorLive] = useState<HostFloorLivePayload | null>(null);
   const [stompLatencyMs, setStompLatencyMs] = useState<number>(18);
   const [isWsLive, setIsWsLive] = useState<boolean>(true);
@@ -164,12 +165,20 @@ export const HostTabletPage: React.FC<HostTabletPageProps> = ({
     return () => clearInterval(timer);
   }, []);
 
-  // Filter event inquiries
+  // Filter event inquiries and bookings needing consultation (EVENT_INQUIRY, PENDING_REVIEW, AWAITING_PAYMENT, or has eventType or consulted)
   const eventInquiries = bookings.filter(
-    (b) => b.status === 'EVENT_INQUIRY' || b.eventType != null
+    (b) =>
+      b.status === 'EVENT_INQUIRY' ||
+      b.status === 'PENDING_REVIEW' ||
+      b.status === 'AWAITING_PAYMENT' ||
+      b.eventType != null ||
+      b.consultationNotes != null ||
+      (b.managerCallStatus && b.managerCallStatus !== 'PENDING_CALL')
   );
   const pendingEventInquiries = eventInquiries.filter(
-    (b) => b.managerCallStatus === 'PENDING_CALL' || !b.managerCallStatus
+    (b) =>
+      (b.status === 'PENDING_REVIEW' || b.status === 'EVENT_INQUIRY') &&
+      (!b.managerCallStatus || b.managerCallStatus === 'PENDING_CALL')
   );
   const pendingInquiriesCount = pendingEventInquiries.length;
 
@@ -197,9 +206,10 @@ export const HostTabletPage: React.FC<HostTabletPageProps> = ({
         : 'CALLED'
     );
     setConsultationNotesInput(inquiry.consultationNotes || '');
-    setAgreedBudgetInput(inquiry.estimatedBudget || 50000000);
-    setAgreedDepositInput(inquiry.depositAmount || Math.round((inquiry.estimatedBudget || 50000000) * 0.3));
-    setTargetBookingStatus(inquiry.status || 'EVENT_INQUIRY');
+    setAgreedBudgetInput(inquiry.estimatedBudget || (inquiry.depositAmount ? inquiry.depositAmount * 2 : 2000000));
+    setAgreedDepositInput(inquiry.depositAmount || 200000);
+    // Khi tư vấn chốt đơn, trạng thái tiếp theo chuẩn là AWAITING_PAYMENT để gửi email nạp cọc
+    setTargetBookingStatus('AWAITING_PAYMENT');
   };
 
   const handleSimulateCall = (inquiry: BookingDetails) => {
@@ -214,8 +224,13 @@ export const HostTabletPage: React.FC<HostTabletPageProps> = ({
   const handleSaveConsultation = async () => {
     if (!selectedInquiryForCall) return;
     setIsSavingConsultation(true);
+    const bookingIdentifier =
+      selectedInquiryForCall.backendUUID ||
+      selectedInquiryForCall.bookingCode ||
+      selectedInquiryForCall.bookingId;
+
     try {
-      await bookingApi.updateEventConsultation(selectedInquiryForCall.bookingId, {
+      await bookingApi.updateEventConsultation(bookingIdentifier, {
         managerCallStatus: consultationCallStatus,
         consultationNotes: consultationNotesInput,
         agreedBudget: agreedBudgetInput,
@@ -236,7 +251,7 @@ export const HostTabletPage: React.FC<HostTabletPageProps> = ({
         onUpdateBooking(updatedBooking);
       }
 
-      showToast(`Đã lưu biên bản tư vấn & cập nhật trạng thái đơn ${selectedInquiryForCall.bookingId}`);
+      showToast(`✅ Đã lưu biên bản & chuyển đơn sang [${targetBookingStatus}], email cọc đã được gửi tới Quý khách!`);
       setSelectedInquiryForCall(null);
     } catch (err: any) {
       console.warn('Lỗi lưu tư vấn:', err);
@@ -251,7 +266,7 @@ export const HostTabletPage: React.FC<HostTabletPageProps> = ({
       if (onUpdateBooking) {
         onUpdateBooking(updatedBooking);
       }
-      showToast(`Đã ghi nhận tư vấn đơn ${selectedInquiryForCall.bookingId}`);
+      showToast(`Đã ghi nhận tư vấn đơn ${selectedInquiryForCall.bookingCode || selectedInquiryForCall.bookingId}`);
       setSelectedInquiryForCall(null);
     } finally {
       setIsSavingConsultation(false);
@@ -370,54 +385,39 @@ export const HostTabletPage: React.FC<HostTabletPageProps> = ({
     return map;
   }, [tables, hostFloorLive, liveTicker, tableOrders]);
 
-  // Group tables by floor
-  const floor1Tables = tables.filter((t) => t.floor === 1);
-  const floor2Tables = tables.filter((t) => t.floor === 2);
-  const floor3Tables = tables.filter((t) => t.floor === 3);
-
-  const getFloorStats = (floorTables: TableItem[]) => {
-    const total = floorTables.length;
-    const available = floorTables.filter((t) => t.status === 'AVAILABLE').length;
-    const seated = floorTables.filter((t) => t.status === 'SEATED').length;
-    const reserved = floorTables.filter((t) => t.status === 'CONFIRMED' || t.status === 'HOLDING').length;
-    const callBill = floorTables.filter((t) => t.status === 'CALL_BILL').length;
-    const cleaning = floorTables.filter((t) => t.status === 'CLEANING').length;
-    const capacity = floorTables.reduce((sum, t) => sum + t.capacity, 0);
+  // Helper compute table statistics
+  const getTableStats = (targetTables: TableItem[]) => {
+    const total = targetTables.length;
+    const available = targetTables.filter((t) => t.status === 'AVAILABLE').length;
+    const seated = targetTables.filter((t) => t.status === 'SEATED').length;
+    const reserved = targetTables.filter((t) => t.status === 'CONFIRMED' || t.status === 'HOLDING').length;
+    const callBill = targetTables.filter((t) => t.status === 'CALL_BILL').length;
+    const cleaning = targetTables.filter((t) => t.status === 'CLEANING').length;
+    const capacity = targetTables.reduce((sum, t) => sum + t.capacity, 0);
     const occupancy = total > 0 ? Math.round(((seated + reserved) / total) * 1000) / 10 : 0;
-    const longDiningCount = floorTables.filter((t) => {
+    const longDiningCount = targetTables.filter((t) => {
       if (t.status !== 'SEATED') return false;
       const m = getTableDiningMetrics(t);
       return m.alertLevel === 'LONG_DINING';
     }).length;
-    const overstayCount = floorTables.filter((t) => {
+    const overstayCount = targetTables.filter((t) => {
       if (t.status !== 'SEATED') return false;
       const m = getTableDiningMetrics(t);
       return m.alertLevel === 'OVERSTAY';
     }).length;
-    const totalDeposit = floorTables.reduce((sum, t) => sum + (t.depositPrice || 0), 0);
+    const totalDeposit = targetTables.reduce((sum, t) => sum + (t.depositPrice || 0), 0);
 
     return { total, available, seated, reserved, callBill, cleaning, capacity, occupancy, longDiningCount, overstayCount, totalDeposit };
   };
 
-  const statsF1 = getFloorStats(floor1Tables);
-  const statsF2 = getFloorStats(floor2Tables);
-  const statsF3 = getFloorStats(floor3Tables);
-  const statsAll = getFloorStats(tables);
+  // Active Zone & Floor Tables
+  const currentFloorTables = tables.filter((t) => {
+    const matchesZone = selectedZone === 'ALL' || t.zone === selectedZone || (t as any).zoneType === selectedZone;
+    const matchesFloor = selectedFloor === 'ALL' || t.floor === selectedFloor;
+    return matchesZone && matchesFloor;
+  });
 
-  const currentFloorStats =
-    selectedFloor === 1
-      ? statsF1
-      : selectedFloor === 2
-      ? statsF2
-      : selectedFloor === 3
-      ? statsF3
-      : statsAll;
-
-  // Active Floor Tables
-  const currentFloorTables =
-    selectedFloor === 'ALL'
-      ? tables
-      : tables.filter((t) => t.floor === selectedFloor);
+  const currentFloorStats = getTableStats(currentFloorTables);
 
 
   const showToast = (msg: string) => {
@@ -513,6 +513,18 @@ export const HostTabletPage: React.FC<HostTabletPageProps> = ({
     });
 
     showToast(`Check-in thành công: Bàn ${table.code} (${table.currentGuestName || 'Khách Online'}).`);
+
+    // Đồng bộ trạng thái SEATED xuống PostgreSQL qua verifyAndCheckIn
+    if (matchedBooking) {
+      const token = (matchedBooking as any).checkinQrToken || matchedBooking.bookingCode || matchedBooking.bookingId;
+      if (token) {
+        bookingApi.verifyAndCheckIn({
+          qrToken: token,
+          scannerLocation: `Host Tablet Nhận Bàn ${table.code}`,
+        }).then(() => console.log(`✅ [Host Tablet] Đã cập nhật đơn ${table.code} sang SEATED trong DB`))
+          .catch((err) => console.warn('Sync check-in backend error:', err));
+      }
+    }
   };
 
   // UC-08: Open Special Requests & Dietary Edit Modal
@@ -761,6 +773,23 @@ export const HostTabletPage: React.FC<HostTabletPageProps> = ({
 
     onUpdateTableStatus(table.id, 'AVAILABLE', undefined);
 
+    // Đồng bộ hoàn tất thanh toán & giải phóng bàn trong DB (UC-18 / UC-20)
+    const matchedBooking = bookings.find((b: BookingDetails) => b.tableId === table.id || (table && b.tableCode.includes(table.code)));
+    if (matchedBooking) {
+      if (onUpdateBooking) {
+        onUpdateBooking({
+          ...matchedBooking,
+          status: 'COMPLETED' as any,
+          rawStatus: 'COMPLETED',
+        });
+      }
+      if (matchedBooking.backendUUID || matchedBooking.bookingId) {
+        bookingApi.completeBooking(matchedBooking.backendUUID || matchedBooking.bookingId)
+          .then(() => console.log(`✅ [Host POS] Đã hoàn tất hóa đơn ${matchedBooking.bookingCode || table.code} và lưu trạng thái COMPLETED trong DB`))
+          .catch((err) => console.warn('Sync complete booking error:', err));
+      }
+    }
+
     setTableOrders((prev) => {
       const copy = { ...prev };
       delete copy[table.id];
@@ -797,11 +826,13 @@ export const HostTabletPage: React.FC<HostTabletPageProps> = ({
         break;
     }
 
+    const isReleasing = nextStatus === 'AVAILABLE' || nextStatus === 'CLEANING';
+
     // 1. Âm thanh tổng hợp Web Audio API và rung haptic
     hostAudioService.playOneTouchTransition(nextStatus);
 
     // 2. Cập nhật state cục bộ
-    onUpdateTableStatus(table.id, nextStatus, table.currentGuestName);
+    onUpdateTableStatus(table.id, nextStatus, isReleasing ? undefined : table.currentGuestName);
 
     // 3. Phát sóng STOMP WebSocket đa kênh tức thời (<300ms)
     const colorMap: Record<string, string> = {
@@ -818,16 +849,40 @@ export const HostTabletPage: React.FC<HostTabletPageProps> = ({
       status: nextStatus,
       color: colorMap[nextStatus] || '#2563EB',
       updatedBy: 'HOST_TABLET',
-      guestName: table.currentGuestName,
+      guestName: isReleasing ? undefined : table.currentGuestName,
       message: `Đổi trạng thái bàn ${table.code} sang ${nextStatus}`,
     });
 
-    // 4. Đồng bộ REST API backend nếu có
+    // 4. Nếu dọn bàn hoặc bàn trống -> giải phóng đơn và hóa đơn
+    if (isReleasing) {
+      setTableOrders((prev) => {
+        const copy = { ...prev };
+        delete copy[table.id];
+        return copy;
+      });
+
+      const matchedBooking = bookings.find((b: BookingDetails) => b.tableId === table.id || (table && b.tableCode.includes(table.code)));
+      if (matchedBooking) {
+        if (onUpdateBooking) {
+          onUpdateBooking({
+            ...matchedBooking,
+            status: 'COMPLETED' as any,
+            rawStatus: 'COMPLETED',
+          });
+        }
+        if (matchedBooking.backendUUID || matchedBooking.bookingId) {
+          bookingApi.completeBooking(matchedBooking.backendUUID || matchedBooking.bookingId)
+            .catch((err) => console.warn('Sync complete booking error:', err));
+        }
+      }
+    }
+
+    // 5. Đồng bộ REST API backend nếu có
     try {
       await bookingApi.oneTouchUpdateTableStatus(table.code, {
         status: nextStatus,
         updatedBy: 'HOST',
-        guestName: table.currentGuestName,
+        guestName: isReleasing ? undefined : table.currentGuestName,
       });
     } catch (e: any) {
       console.debug('API oneTouch status update error:', e.message);
@@ -846,9 +901,16 @@ export const HostTabletPage: React.FC<HostTabletPageProps> = ({
     // 1. Âm thanh phản hồi
     hostAudioService.playOneTouchTransition(newStatus);
 
+    const targetTable = selectedTableForPOS;
+    const isReleasing = newStatus === 'AVAILABLE' || newStatus === 'CLEANING';
+
     // 2. Cập nhật state
-    onUpdateTableStatus(selectedTableForPOS.id, newStatus, guestName);
-    setSelectedTableForPOS((prev) => (prev ? { ...prev, status: newStatus } : null));
+    onUpdateTableStatus(targetTable.id, newStatus, isReleasing ? undefined : guestName);
+    if (newStatus === 'AVAILABLE') {
+      setSelectedTableForPOS(null);
+    } else {
+      setSelectedTableForPOS((prev) => (prev ? { ...prev, status: newStatus } : null));
+    }
 
     // 3. Phát sóng STOMP WebSocket
     const colorMap: Record<string, string> = {
@@ -860,29 +922,59 @@ export const HostTabletPage: React.FC<HostTabletPageProps> = ({
     };
 
     websocketService.broadcastOneTouchTableStatus({
-      tableId: selectedTableForPOS.id,
-      tableCode: selectedTableForPOS.code,
+      tableId: targetTable.id,
+      tableCode: targetTable.code,
       status: newStatus,
       color: colorMap[newStatus] || '#2563EB',
       updatedBy: 'HOST_TABLET',
-      guestName: guestName || selectedTableForPOS.currentGuestName,
-      message: `Đổi trạng thái bàn ${selectedTableForPOS.code} sang ${newStatus}`,
+      guestName: isReleasing ? undefined : (guestName || targetTable.currentGuestName),
+      message: `Đổi trạng thái bàn ${targetTable.code} sang ${newStatus}`,
       notes,
     });
 
-    // 4. API Call
+    // 4. Nếu bàn chuyển sang CLEANING hoặc AVAILABLE -> Hoàn tất đơn đặt bàn và dọn order
+    if (isReleasing) {
+      setTableOrders((prev) => {
+        const copy = { ...prev };
+        delete copy[targetTable.id];
+        return copy;
+      });
+
+      const matchedBooking = bookings.find(
+        (b: BookingDetails) =>
+          b.tableId === targetTable.id ||
+          (targetTable && b.tableCode.includes(targetTable.code))
+      );
+
+      if (matchedBooking) {
+        if (onUpdateBooking) {
+          onUpdateBooking({
+            ...matchedBooking,
+            status: 'COMPLETED' as any,
+            rawStatus: 'COMPLETED',
+          });
+        }
+        if (matchedBooking.backendUUID || matchedBooking.bookingId) {
+          bookingApi.completeBooking(matchedBooking.backendUUID || matchedBooking.bookingId)
+            .then(() => console.log(`✅ [One-Touch] Đã hoàn tất hóa đơn ${matchedBooking.bookingCode} và lưu COMPLETED trong DB`))
+            .catch((err) => console.warn('Sync complete booking error:', err));
+        }
+      }
+    }
+
+    // 5. API Call
     try {
-      await bookingApi.oneTouchUpdateTableStatus(selectedTableForPOS.code, {
+      await bookingApi.oneTouchUpdateTableStatus(targetTable.code, {
         status: newStatus,
         updatedBy: 'HOST',
-        guestName: guestName || selectedTableForPOS.currentGuestName,
+        guestName: isReleasing ? undefined : (guestName || targetTable.currentGuestName),
         notes,
       });
     } catch (e: any) {
       console.debug('API oneTouch status update error:', e.message);
     }
 
-    showToast(`⚡ [1 Chạm] Bàn ${selectedTableForPOS.code} ➔ ${newStatus} (<300ms STOMP)`);
+    showToast(`⚡ [1 Chạm] Bàn ${targetTable.code} ➔ ${newStatus} (<300ms STOMP)`);
   };
 
 
@@ -997,14 +1089,14 @@ export const HostTabletPage: React.FC<HostTabletPageProps> = ({
               </button>
             )}
 
-            {/* UC-10: Large Banquet & Floor Buyout Drawer trigger */}
+            {/* UC-10: Large Banquet & Consultation Inquiries Drawer trigger */}
             <button
               type="button"
               onClick={() => setIsEventDrawerOpen(true)}
               className="relative px-4 py-2 rounded-2xl bg-gradient-to-r from-purple-900 to-indigo-900 hover:from-purple-800 hover:to-indigo-800 text-white text-xs font-bold flex items-center gap-2 transition-all shadow-md cursor-pointer border border-purple-400/40"
             >
               <Sparkles className="w-4 h-4 text-amber-300" />
-              <span>Tiệc & Rooftop (UC-10)</span>
+              <span>Đơn Cần Tư Vấn & Tiệc (UC-10)</span>
               {pendingInquiriesCount > 0 && (
                 <span className="w-5 h-5 rounded-full bg-rose-500 text-white font-mono text-[10px] flex items-center justify-center animate-bounce shadow-xs">
                   {pendingInquiriesCount}
@@ -1023,7 +1115,7 @@ export const HostTabletPage: React.FC<HostTabletPageProps> = ({
           </div>
         </div>
 
-        {/* SLA Callback Alert Banner for Shift Manager (UC-10) */}
+        {/* SLA Callback Alert Banner for Shift Manager & Host (UC-10) */}
         {pendingInquiriesCount > 0 && (
           <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-r from-rose-950 via-purple-950 to-rose-950 border-2 border-rose-400 text-white flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-xl">
             <div className="flex items-center gap-3.5">
@@ -1036,11 +1128,11 @@ export const HostTabletPage: React.FC<HostTabletPageProps> = ({
                     Cam Kết Gọi Tư Vấn Trong 15 Phút (SLA)
                   </span>
                   <span className="text-xs text-rose-200">
-                    Có <strong>{pendingInquiriesCount} đơn tiệc đoàn đông / bao trọn tầng</strong> cần Quản lý ca gọi tư vấn trực tiếp
+                    Có <strong>{pendingInquiriesCount} đơn đặt bàn & tiệc cần tư vấn</strong> trực tiếp từ Quản lý / Lễ tân
                   </span>
                 </div>
                 <p className="text-xs text-rose-100/90 leading-relaxed">
-                  Bao trọn Tầng 3 Rooftop & Tiệc Sinh Nhật VIP: Vui lòng gọi điện tư vấn và ghi nhận tiền cọc thỏa thuận.
+                  Đơn đặt bàn & sự kiện đang chờ duyệt: Vui lòng gọi điện tư vấn, xếp bàn và chốt tiền cọc cho khách theo cam kết SLA 15 phút.
                 </p>
               </div>
             </div>
@@ -1055,158 +1147,69 @@ export const HostTabletPage: React.FC<HostTabletPageProps> = ({
           </div>
         )}
 
-        {/* UC-15: One-Touch Floor Switcher Bar (Chuyển tầng 1 chạm trên Tablet) */}
+        {/* UC-27 & UC-05: Zone-Based Table Management (Bộ Lọc Phân Khu Nhà Hàng) */}
         <div className="space-y-3 pt-2 border-t border-[#E8DFD1]">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Layers className="w-4 h-4 text-[#8C6A43]" />
               <span className="text-xs font-bold uppercase tracking-wider text-[#8C6A43]">
-                Chuyển Tầng 1 Chạm (Host Floor Switcher)
+                PHÂN KHU TRẢI NGHIỆM (ZONE-BASED SEATING UC-05 / UC-27)
               </span>
             </div>
             <span className="text-[11px] text-[#78716C]">
-              Đồng bộ đa tầng qua STOMP • Lần cuối: {lastSyncTime}
+              Đồng bộ dữ liệu thời gian thực • Lần cuối: {lastSyncTime}
             </span>
           </div>
 
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-            {/* Tầng 1 */}
-            <button
-              type="button"
-              onClick={() => setSelectedFloor(1)}
-              className={`p-3.5 rounded-2xl border text-left transition-all cursor-pointer flex flex-col justify-between ${
-                selectedFloor === 1
-                  ? 'bg-gradient-to-br from-[#FAF4EB] to-amber-50/80 border-[#C4A480] ring-2 ring-[#C4A480]/60 shadow-md scale-[1.01]'
-                  : 'bg-[#FAF7F2] border-[#E8DFD1] hover:bg-white hover:border-[#C4A480]/50'
-              }`}
-            >
-              <div className="flex items-start justify-between">
-                <div>
-                  <span className="font-serif text-base font-bold text-[#2C221E] block">
-                    Tầng 1 • Grand Bistro
-                  </span>
-                  <span className="text-[10px] text-[#8C6A43] font-medium block">
-                    View Nguyễn Huệ • Sân Khấu Acoustic
-                  </span>
-                </div>
-                <span className="w-6 h-6 rounded-full bg-amber-100 text-amber-900 text-xs font-bold flex items-center justify-center font-mono">
-                  1
-                </span>
-              </div>
-              <div className="flex items-center justify-between text-[11px] text-[#78716C] pt-2 mt-2 border-t border-[#E8DFD1]/60">
-                <span className="font-semibold text-emerald-700">
-                  {statsF1.available}/{statsF1.total} bàn trống
-                </span>
-                <span className="font-mono font-bold text-amber-900 bg-amber-100/70 px-1.5 py-0.5 rounded">
-                  {statsF1.occupancy}% lấp đầy
-                </span>
-              </div>
-            </button>
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
+            {[
+              { id: 'ALL', name: 'Toàn Bộ Bàn', desc: 'Tất cả phân khu', icon: '✨' },
+              { id: 'STANDARD', name: 'Sảnh Chính', desc: 'Bàn tiêu chuẩn', icon: '🍽️' },
+              { id: 'WINDOW_VIEW', name: 'View Cửa Sổ', desc: 'Ngắm đại lộ', icon: '🖼️' },
+              { id: 'OUTDOOR', name: 'Sân Vườn / Rooftop', desc: 'Không gian mở', icon: '🌿' },
+              { id: 'VIP', name: 'Phòng VIP', desc: 'Không gian riêng tư', icon: '👑' },
+              { id: 'BAR_SIDE', name: 'Quầy Bar', desc: 'Cocktail & Rượu', icon: '🍸' },
+            ].map((zoneItem) => {
+              const zoneTables = zoneItem.id === 'ALL'
+                ? tables
+                : tables.filter((t) => t.zone === zoneItem.id || (t as any).zoneType === zoneItem.id);
+              const total = zoneTables.length;
+              const avail = zoneTables.filter((t) => t.status === 'AVAILABLE').length;
+              const isSelected = selectedZone === zoneItem.id;
 
-            {/* Tầng 2 */}
-            <button
-              type="button"
-              onClick={() => setSelectedFloor(2)}
-              className={`p-3.5 rounded-2xl border text-left transition-all cursor-pointer flex flex-col justify-between ${
-                selectedFloor === 2
-                  ? 'bg-gradient-to-br from-purple-50/70 to-indigo-50/70 border-purple-400 ring-2 ring-purple-400/60 shadow-md scale-[1.01]'
-                  : 'bg-[#FAF7F2] border-[#E8DFD1] hover:bg-white hover:border-purple-300'
-              }`}
-            >
-              <div className="flex items-start justify-between">
-                <div>
-                  <span className="font-serif text-base font-bold text-[#2C221E] block">
-                    Tầng 2 • VIP Salon
-                  </span>
-                  <span className="text-[10px] text-purple-800 font-medium block">
-                    5 Phòng VIP • Hầm Rượu Vang
-                  </span>
-                </div>
-                <span className="w-6 h-6 rounded-full bg-purple-100 text-purple-900 text-xs font-bold flex items-center justify-center font-mono">
-                  2
-                </span>
-              </div>
-              <div className="flex items-center justify-between text-[11px] text-[#78716C] pt-2 mt-2 border-t border-[#E8DFD1]/60">
-                <span className="font-semibold text-emerald-700">
-                  {statsF2.available}/{statsF2.total} bàn trống
-                </span>
-                <span className="font-mono font-bold text-purple-900 bg-purple-100/70 px-1.5 py-0.5 rounded">
-                  {statsF2.occupancy}% lấp đầy
-                </span>
-              </div>
-            </button>
-
-            {/* Tầng 3 */}
-            <button
-              type="button"
-              onClick={() => setSelectedFloor(3)}
-              className={`p-3.5 rounded-2xl border text-left transition-all cursor-pointer flex flex-col justify-between ${
-                selectedFloor === 3
-                  ? 'bg-gradient-to-br from-sky-50/70 to-blue-50/70 border-sky-400 ring-2 ring-sky-400/60 shadow-md scale-[1.01]'
-                  : 'bg-[#FAF7F2] border-[#E8DFD1] hover:bg-white hover:border-sky-300'
-              }`}
-            >
-              <div className="flex items-start justify-between">
-                <div>
-                  <span className="font-serif text-base font-bold text-[#2C221E] block">
-                    Tầng 3 • Sky Lounge
-                  </span>
-                  <span className="text-[10px] text-sky-800 font-medium block">
-                    Rooftop • Sunset View Sài Gòn
-                  </span>
-                </div>
-                <span className="w-6 h-6 rounded-full bg-sky-100 text-sky-900 text-xs font-bold flex items-center justify-center font-mono">
-                  3
-                </span>
-              </div>
-              <div className="flex items-center justify-between text-[11px] text-[#78716C] pt-2 mt-2 border-t border-[#E8DFD1]/60">
-                <span className="font-semibold text-emerald-700">
-                  {statsF3.available}/{statsF3.total} bàn trống
-                </span>
-                <span className="font-mono font-bold text-sky-900 bg-sky-100/70 px-1.5 py-0.5 rounded">
-                  {statsF3.occupancy}% lấp đầy
-                </span>
-              </div>
-            </button>
-
-            {/* Tất Cả Các Tầng */}
-            <button
-              type="button"
-              onClick={() => setSelectedFloor('ALL')}
-              className={`p-3.5 rounded-2xl border text-left transition-all cursor-pointer flex flex-col justify-between ${
-                selectedFloor === 'ALL'
-                  ? 'bg-gradient-to-br from-[#2C221E] to-[#44362E] text-white border-[#2C221E] ring-2 ring-[#8C6A43]/60 shadow-md scale-[1.01]'
-                  : 'bg-[#FAF7F2] border-[#E8DFD1] hover:bg-white hover:border-[#8C6A43]/50'
-              }`}
-            >
-              <div className="flex items-start justify-between">
-                <div>
-                  <span className={`font-serif text-base font-bold block ${selectedFloor === 'ALL' ? 'text-white' : 'text-[#2C221E]'}`}>
-                    Toàn Nhà Hàng (Đa Tầng)
-                  </span>
-                  <span className={`text-[10px] font-medium block ${selectedFloor === 'ALL' ? 'text-[#C4A480]' : 'text-[#8C6A43]'}`}>
-                    Tổng quan 3 tầng • 24 Bàn Live
-                  </span>
-                </div>
-                <span className={`w-6 h-6 rounded-full text-xs font-bold flex items-center justify-center font-mono ${
-                  selectedFloor === 'ALL' ? 'bg-[#8C6A43] text-white' : 'bg-stone-200 text-stone-800'
-                }`}>
-                  Σ
-                </span>
-              </div>
-              <div className={`flex items-center justify-between text-[11px] pt-2 mt-2 border-t ${
-                selectedFloor === 'ALL' ? 'border-white/20 text-white/80' : 'border-[#E8DFD1]/60 text-[#78716C]'
-              }`}>
-                <span className={selectedFloor === 'ALL' ? 'text-emerald-300 font-semibold' : 'text-emerald-700 font-semibold'}>
-                  {statsAll.available}/{statsAll.total} bàn trống
-                </span>
-                <span className={`font-mono font-bold px-1.5 py-0.5 rounded ${
-                  selectedFloor === 'ALL' ? 'bg-white/20 text-white' : 'bg-stone-100 text-stone-900'
-                }`}>
-                  {statsAll.occupancy}% lấp đầy
-                </span>
-              </div>
-            </button>
+              return (
+                <button
+                  key={zoneItem.id}
+                  type="button"
+                  onClick={() => setSelectedZone(zoneItem.id)}
+                  className={`p-3 rounded-2xl border text-left transition-all cursor-pointer flex flex-col justify-between ${
+                    isSelected
+                      ? 'bg-gradient-to-br from-[#FAF4EB] to-amber-50 border-[#C4A480] ring-2 ring-[#C4A480]/60 shadow-sm scale-[1.01]'
+                      : 'bg-[#FAF7F2] border-[#E8DFD1] hover:bg-white hover:border-[#C4A480]/50'
+                  }`}
+                >
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <span className="font-serif text-sm font-bold text-[#2C221E] flex items-center gap-1.5">
+                        <span>{zoneItem.icon}</span>
+                        <span className="truncate">{zoneItem.name}</span>
+                      </span>
+                      <span className="text-[10px] text-[#8C6A43] font-medium block truncate">
+                        {zoneItem.desc}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between text-[11px] text-[#78716C] pt-1.5 mt-1.5 border-t border-[#E8DFD1]/60">
+                    <span className="font-semibold text-emerald-700">
+                      {avail}/{total} trống
+                    </span>
+                    <span className="font-mono text-[10px] text-stone-500">
+                      {total > 0 ? Math.round(((total - avail) / total) * 100) : 0}% đầy
+                    </span>
+                  </div>
+                </button>
+              );
+            })}
           </div>
         </div>
 
@@ -1379,24 +1382,24 @@ export const HostTabletPage: React.FC<HostTabletPageProps> = ({
               <h2 className="font-serif text-xl font-bold text-[#2C221E] flex items-center gap-2">
                 <span>
                   Sơ Đồ Mặt Bằng Live •{' '}
-                  {selectedFloor === 1
-                    ? 'Tầng 1 (Grand Bistro)'
-                    : selectedFloor === 2
-                    ? 'Tầng 2 (VIP Salon Cellar)'
-                    : selectedFloor === 3
-                    ? 'Tầng 3 (Sky Lounge Rooftop)'
-                    : 'Tầng 1 (Grand Bistro - Sảnh Chính)'}
+                  {selectedZone === 'ALL'
+                    ? 'Toàn Cảnh Nhà Hàng Le Prime Bistro'
+                    : selectedZone === 'STANDARD'
+                    ? 'Phân Khu Sảnh Chính (Grand Dining)'
+                    : selectedZone === 'WINDOW_VIEW'
+                    ? 'Phân Khu View Cửa Sổ (Panoramic Street View)'
+                    : selectedZone === 'OUTDOOR'
+                    ? 'Phân Khu Sân Vườn / Rooftop'
+                    : selectedZone === 'VIP'
+                    ? 'Phân Khu Phòng Tiệc VIP'
+                    : 'Phân Khu Quầy Bar Mixology'}
                 </span>
                 <span className="text-xs font-normal text-[#78716C]">
                   (Tọa độ thực, cảm ứng chạm 1 chạm vào từng bàn để thao tác)
                 </span>
               </h2>
               <span className="text-xs text-[#8C6A43] font-medium mt-0.5 block">
-                {selectedFloor === 1 || selectedFloor === 'ALL'
-                  ? '✨ Vòm Kính Panoramic View Phố Đi Bộ Nguyễn Huệ • Sân Khấu Acoustic'
-                  : selectedFloor === 2
-                  ? '🍷 Không Gian Phòng VIP Riêng Tư • Hầm Rượu Vang Bordeaux Grand Cru'
-                  : '🌟 Sky Lounge Rooftop Ngoài Trời • Ngắm Hoàng Hôn & Skyline Sài Gòn'}
+                ✨ Vòm Kính Panoramic View Phố Đi Bộ Nguyễn Huệ • 5 Phân Khu Trải Nghiệm Chuẩn Michelin
               </span>
             </div>
 
@@ -3352,7 +3355,9 @@ export const HostTabletPage: React.FC<HostTabletPageProps> = ({
                               ? '🤝 Workshop & Networking'
                               : inquiry.eventType === 'WEDDING_ENGAGEMENT'
                               ? '💍 Tiệc Đính Hôn Thân Mật'
-                              : '✨ Tiệc Sự Kiện Đoàn Đông'}
+                              : inquiry.status === 'PENDING_REVIEW'
+                              ? '📞 Đặt Bàn Chờ Tư Vấn'
+                              : '✨ Đơn Tiệc & Tư Vấn'}
                           </span>
                           <span className="text-xs text-stone-500 font-mono flex items-center gap-1">
                             <Calendar className="w-3.5 h-3.5 text-stone-400" />
@@ -3494,23 +3499,51 @@ export const HostTabletPage: React.FC<HostTabletPageProps> = ({
 
                       {/* Card Action Buttons */}
                       <div className="flex flex-wrap items-center justify-end gap-3 pt-4 mt-3 border-t border-stone-200">
+                        {inquiry.status === 'AWAITING_PAYMENT' && (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const payUrl = `${window.location.origin}/?bookingId=${inquiry.bookingCode || inquiry.bookingId}&action=pay-deposit`;
+                                navigator.clipboard.writeText(payUrl);
+                                showToast(`📋 Đã copy link thanh toán cọc đơn #${inquiry.bookingCode || inquiry.bookingId}!`);
+                              }}
+                              className="px-3 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs flex items-center gap-1.5 shadow-xs cursor-pointer transition-all"
+                            >
+                              <span>🔗 Copy Link Cọc</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                window.open(
+                                  `${window.location.origin}/?bookingId=${inquiry.bookingCode || inquiry.bookingId}&action=pay-deposit`,
+                                  '_blank'
+                                );
+                              }}
+                              className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-1.5 shadow-xs cursor-pointer transition-all"
+                            >
+                              <span>💳 Mở Cổng Nạp Cọc</span>
+                            </button>
+                          </>
+                        )}
+
                         <button
                           type="button"
                           onClick={() => handleSimulateCall(inquiry)}
                           disabled={isCalling}
-                          className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center gap-2 shadow-xs cursor-pointer transition-all"
+                          className="px-3.5 py-2 rounded-xl bg-stone-800 hover:bg-stone-900 text-white font-bold text-xs flex items-center gap-1.5 shadow-xs cursor-pointer transition-all"
                         >
-                          <PhoneCall className={`w-4 h-4 ${isCalling ? 'animate-spin' : ''}`} />
-                          <span>{isCalling ? 'Đang Kết Nối...' : `Gọi Tư Vấn (${inquiry.phone})`}</span>
+                          <PhoneCall className={`w-3.5 h-3.5 ${isCalling ? 'animate-spin' : ''}`} />
+                          <span>{isCalling ? 'Đang Gọi...' : `Gọi Tư Vấn (${inquiry.phone})`}</span>
                         </button>
 
                         <button
                           type="button"
                           onClick={() => handleOpenConsultationModal(inquiry)}
-                          className="px-4 py-2 rounded-xl bg-purple-900 hover:bg-purple-800 text-white font-bold text-xs flex items-center gap-2 shadow-xs cursor-pointer transition-all"
+                          className="px-4 py-2 rounded-xl bg-purple-900 hover:bg-purple-800 text-white font-bold text-xs flex items-center gap-1.5 shadow-xs cursor-pointer transition-all"
                         >
-                          <Edit3 className="w-4 h-4 text-amber-300" />
-                          <span>Ghi Nhận Tư Vấn & Chốt Cọc</span>
+                          <Edit3 className="w-3.5 h-3.5 text-amber-300" />
+                          <span>{inquiry.consultationNotes ? 'Chỉnh Sửa Biên Bản' : 'Lập Biên Bản Tư Vấn'}</span>
                         </button>
                       </div>
                     </div>
@@ -3608,10 +3641,10 @@ export const HostTabletPage: React.FC<HostTabletPageProps> = ({
                   onChange={(e) => setTargetBookingStatus(e.target.value as any)}
                   className="w-full px-3 py-2.5 rounded-xl border border-[#E8DFD1] bg-white text-xs font-semibold text-[#2C221E] focus:outline-none focus:border-purple-600"
                 >
-                  <option value="EVENT_INQUIRY">EVENT_INQUIRY (Vẫn giữ trạng thái chờ tư vấn)</option>
-                  <option value="AWAITING_PAYMENT">AWAITING_PAYMENT (Chờ khách chuyển khoản cọc VietQR)</option>
-                  <option value="CONFIRMED">CONFIRMED (Đã nhận tiền cọc - Khóa lịch tổ chức)</option>
-                  <option value="CANCELLED">CANCELLED (Hủy đơn đặt tiệc)</option>
+                  <option value="AWAITING_PAYMENT">⭐ AWAITING_PAYMENT (Khách chốt đặt cọc - Hệ thống gửi link VietQR/MoMo qua email)</option>
+                  <option value="CONFIRMED">CONFIRMED (Khách đã cọc trực tiếp tại quầy / chuyển khoản ngay - Khóa bàn & cấp vé QR)</option>
+                  <option value="PENDING_REVIEW">PENDING_REVIEW (Chờ liên hệ lại sau)</option>
+                  <option value="CANCELLED">CANCELLED (Hủy đơn đặt bàn / Không liên hệ được khách)</option>
                 </select>
               </div>
 

@@ -21,6 +21,7 @@ import {
 import type { TableItem, BookingDetails } from '../../types';
 import { bookingApi } from '../../services/bookingApi';
 import { hostAudioService } from '../../services/hostAudioService';
+import jsQR from 'jsqr';
 
 interface HostCameraQrScannerProps {
   isOpen: boolean;
@@ -156,7 +157,7 @@ export const HostCameraQrScanner: React.FC<HostCameraQrScannerProps> = ({
       try {
         const res = await bookingApi.verifyAndCheckIn({
           qrToken: token,
-          scannerLocation: 'Camera Tablet Sảnh Đón Khách (Tầng 1)',
+          scannerLocation: 'Camera Tablet Sảnh Đón Khách',
         });
 
         if (res.success && res.data) {
@@ -199,10 +200,10 @@ export const HostCameraQrScanner: React.FC<HostCameraQrScannerProps> = ({
             floorNumber: targetTable ? targetTable.floor : 1,
             floorName:
               targetTable?.floor === 2
-                ? 'Tầng 2 (VIP Salon Cellar)'
+                ? 'Khu Phòng VIP'
                 : targetTable?.floor === 3
-                ? 'Tầng 3 (Sky Lounge Rooftop)'
-                : 'Tầng 1 (Grand Bistro)',
+                ? 'Khu Sky Lounge'
+                : 'Khu Sảnh Chính',
             zoneName:
               targetTable?.zone === 'WINDOW_VIEW'
                 ? 'View Phố Nguyễn Huệ'
@@ -254,7 +255,7 @@ export const HostCameraQrScanner: React.FC<HostCameraQrScannerProps> = ({
     [isVerifying, tables, bookings, onCheckInSuccess]
   );
 
-  // 1-Second Auto Frame Scanner Loop qua Native BarcodeDetector (nếu có)
+  // Realtime Frame Scanner Loop qua jsQR Engine & Native BarcodeDetector
   useEffect(() => {
     if (!isOpen || cameraStatus !== 'active') return;
 
@@ -263,19 +264,56 @@ export const HostCameraQrScanner: React.FC<HostCameraQrScannerProps> = ({
     scanIntervalRef.current = setInterval(async () => {
       if (isScanningFrame || isVerifying || scanSuccessData) return;
 
-      if (videoRef.current && videoRef.current.readyState === videoRef.current.HAVE_ENOUGH_DATA) {
+      const video = videoRef.current;
+      const canvas = canvasRef.current;
+
+      if (video && video.readyState >= 2 && video.videoWidth > 0) {
         isScanningFrame = true;
 
         try {
+          // 1. Thử giải mã nhanh bằng native BarcodeDetector nếu trình duyệt hỗ trợ
           if ('BarcodeDetector' in window) {
-            const barcodeDetector = new (window as any).BarcodeDetector({ formats: ['qr_code'] });
-            const barcodes = await barcodeDetector.detect(videoRef.current);
+            try {
+              const barcodeDetector = new (window as any).BarcodeDetector({ formats: ['qr_code'] });
+              const barcodes = await barcodeDetector.detect(video);
 
-            if (barcodes && barcodes.length > 0) {
-              const detectedValue = barcodes[0].rawValue;
-              if (detectedValue) {
-                console.log('📷 [Camera QR Scanner] Phát hiện mã QR trong 1s:', detectedValue);
-                handleExecuteVerifyToken(detectedValue);
+              if (barcodes && barcodes.length > 0) {
+                const detectedValue = barcodes[0].rawValue;
+                if (detectedValue) {
+                  console.log('📷 [BarcodeDetector] Phát hiện mã QR:', detectedValue);
+                  handleExecuteVerifyToken(detectedValue);
+                  return;
+                }
+              }
+            } catch {
+              // Bỏ qua lỗi detector và chuyển sang jsQR
+            }
+          }
+
+          // 2. Bộ giải mã bằng thư viện jsQR (hoạt động 100% trên mọi trình duyệt: Chrome, Edge, Firefox, Cốc Cốc)
+          if (canvas) {
+            let width = video.videoWidth;
+            let height = video.videoHeight;
+
+            // Giới hạn max width 800px để jsQR xử lý siêu tốc (< 15ms/frame) mà độ chi tiết QR vẫn cực nét
+            if (width > 800) {
+              height = Math.round((height * 800) / width);
+              width = 800;
+            }
+
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext('2d', { willReadFrequently: true });
+            if (ctx) {
+              ctx.drawImage(video, 0, 0, width, height);
+              const imageData = ctx.getImageData(0, 0, width, height);
+              const code = jsQR(imageData.data, width, height, {
+                inversionAttempts: 'attemptBoth',
+              });
+
+              if (code && code.data && code.data.trim()) {
+                console.log('📷 [jsQR Engine] Nhận diện mã QR thành công:', code.data);
+                handleExecuteVerifyToken(code.data.trim());
               }
             }
           }
@@ -285,7 +323,7 @@ export const HostCameraQrScanner: React.FC<HostCameraQrScannerProps> = ({
           isScanningFrame = false;
         }
       }
-    }, 250);
+    }, 200);
 
     return () => {
       if (scanIntervalRef.current) {
@@ -380,27 +418,38 @@ export const HostCameraQrScanner: React.FC<HostCameraQrScannerProps> = ({
     handleExecuteVerifyToken(`BK-${tableCode}-2026`);
   };
 
-  // Tải ảnh QR để giải mã (Upload Fallback)
+  // Tải ảnh QR để giải mã (Upload Fallback bằng jsQR + BarcodeDetector)
   const handleUploadPhoto = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if ('BarcodeDetector' in window) {
-      try {
-        const img = new Image();
-        img.src = URL.createObjectURL(file);
-        await img.decode();
-        const detector = new (window as any).BarcodeDetector({ formats: ['qr_code'] });
-        const barcodes = await detector.detect(img);
-        if (barcodes.length > 0) {
-          const val = barcodes[0].rawValue;
+    try {
+      const img = new Image();
+      const objectUrl = URL.createObjectURL(file);
+      img.src = objectUrl;
+      await img.decode();
+
+      const canvas = document.createElement('canvas');
+      canvas.width = img.naturalWidth || img.width;
+      canvas.height = img.naturalHeight || img.height;
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const code = jsQR(imageData.data, canvas.width, canvas.height, {
+          inversionAttempts: 'attemptBoth',
+        });
+        URL.revokeObjectURL(objectUrl);
+        if (code && code.data && code.data.trim()) {
+          const val = code.data.trim();
           setManualTokenInput(val);
           handleExecuteVerifyToken(val);
           return;
         }
-      } catch (err) {
-        console.warn('Upload decode error:', err);
       }
+      URL.revokeObjectURL(objectUrl);
+    } catch (err) {
+      console.warn('Upload decode error:', err);
     }
     // Fallback nếu không đọc được ảnh
     handleSimulateValidScan();

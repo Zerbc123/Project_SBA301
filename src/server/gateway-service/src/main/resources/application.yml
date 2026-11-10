@@ -62,6 +62,12 @@ spring:
           predicates:
             - Path=/api/v1/analytics/**
 
+        # Route 6: Notification & Email Service
+        - id: notification-service
+          uri: lb://notification-service
+          predicates:
+            - Path=/api/v1/notifications/**
+
 eureka:
   client:
     service-url:
