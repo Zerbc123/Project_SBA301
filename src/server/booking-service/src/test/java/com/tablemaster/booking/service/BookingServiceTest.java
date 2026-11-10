@@ -452,7 +452,7 @@ class BookingServiceTest {
                         .targetBookingStatus("AWAITING_PAYMENT")
                         .build();
 
-        BookingResponse response = bookingService.updateEventConsultation(bookingId, consultReq, managerId);
+        BookingResponse response = bookingService.updateEventConsultation(bookingId.toString(), consultReq, managerId);
 
         assertNotNull(response);
         assertEquals("AWAITING_PAYMENT", response.getStatus());

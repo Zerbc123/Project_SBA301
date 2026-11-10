@@ -89,6 +89,19 @@ sequenceDiagram
 
 ---
 
+### 2.3. Bộ Giải Mã Kép Đa Nền Tảng: BarcodeDetector + jsQR Engine
+
+Trong thực tế vận hành trên máy tính Laptop/Tablet chạy hệ điều hành Windows, các trình duyệt web phổ biến như Google Chrome, Microsoft Edge hay Mozilla Firefox **tắt mặc định API thử nghiệm `BarcodeDetector`** (`'BarcodeDetector' in window === false`). Để tránh tình trạng camera mở nhưng không quét được mã từ màn hình điện thoại của khách, hệ thống thiết kế cơ chế **Giải mã kép (Dual-Engine Fallback)**:
+
+1. **Native BarcodeDetector:** Ưu tiên sử dụng nếu trình duyệt hỗ trợ tăng tốc phần cứng (Hardware Acceleration).
+2. **Thư viện giải mã phần mềm `jsQR`:** 
+   - Tần số quét khung hình: **200ms/frame**.
+   - Kỹ thuật Canvas Sampling: Từng frame từ webcam được vẽ lên `HTMLCanvasElement` ngầm, tự động scale về độ phân giải tối ưu (chiều rộng tối đa 800px) giúp giảm thời gian phân tích thuật toán xuống **dưới 15ms/frame**.
+   - Thuật toán đa hướng `attemptBoth`: Tự động đảo màu sáng/tối để bắt nhạy cả mã QR trên màn hình điện thoại đang bật Dark Mode hoặc màn hình bị lóa ánh sáng đèn chùm sảnh tiếp tân.
+   - Hỗ trợ giải mã cả file ảnh tải lên (`handleUploadPhoto`).
+
+---
+
 ## 3. Hiện Thực Âm Thanh Phản Hồi Không Cần Tệp Ngoài (`hostAudioService.ts`)
 
 Để đảm bảo âm thanh phản hồi phát ra ngay lập tức với độ trễ 0ms trên mọi trình duyệt Tablet (Safari iOS, Chrome Android, Edge Windows) mà không bị phụ thuộc vào tệp `.mp3` bên ngoài hay gặp lỗi 404/CORS, hệ thống sử dụng **HTML5 Web Audio API** nguyên bản:

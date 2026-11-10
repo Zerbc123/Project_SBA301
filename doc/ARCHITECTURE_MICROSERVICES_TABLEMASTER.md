@@ -69,13 +69,14 @@
 |    - Redis Redlock Concurrency Engine, Giữ bàn 5 phút, Saga Orchestrator, Quản lý trạng thái bàn     |
 +-------------------------------------------------------------------------------------------------------+
 | 6. PAYMENT & INVOICE SERVICE : Spring Boot (Port: 8084) - DB: `tablemaster_payment`                   |
-|    - Sinh mã VietQR động, Webhook Ngân hàng (PayOS/Casso), Đối soát HMAC-SHA256, Hoàn tiền tự động   |
+|    - Sinh mã VietQR động, Webhook Ngân hàng (MoMo/PayOS), Đối soát HMAC-SHA256, Hoàn tiền tự động     |
 +-------------------------------------------------------------------------------------------------------+
-| 7. NOTIFICATION & REALTIME   : Spring Boot (Port: 8085) - DB: `tablemaster_notification`              |
-|    - WebSocket STOMP Broker cho Frontend Client, Gửi Mail xác nhận kèm QR Ticket, SMS / Zalo ZNS      |
-+-------------------------------------------------------------------------------------------------------+
-| 8. ANALYTICS & AUDIT SERVICE : Spring Boot (Port: 8086) - DB: `tablemaster_analytics`                |
+| 7. ANALYTICS & AUDIT SERVICE : Spring Boot (Port: 8085) - DB: `tablemaster_analytics`                |
 |    - Kafka Event Sourcing, Tính toán chỉ số RevPASH, Tỷ lệ No-Show, Phân tích khu vực bàn đắt khách    |
++-------------------------------------------------------------------------------------------------------+
+| 8. NOTIFICATION SERVICE      : Spring Boot (Port: 8086) - Kafka Consumer & JavaMailSender            |
+|    - Tiêu thụ Kafka event (notification.email.sent), Gửi Email HTML Responsive kèm Mã Đơn #BK...,     |
+|      VietQR và Vé điện tử E-Ticket QR Code check-in; Hỗ trợ thông báo tiệc đoàn đông (EVENT_INQUIRY)  |
 +-------------------------------------------------------------------------------------------------------+
 ```
 
@@ -269,17 +270,17 @@ spring:
           predicates:
             - Path=/api/v1/payments/**, /api/v1/webhooks/**
 
-        # 5. NOTIFICATION & WEBSOCKET STOMP RELAY
-        - id: notification-service-route
-          uri: lb:ws://NOTIFICATION-SERVICE
-          predicates:
-            - Path=/ws/**
-
-        # 6. ANALYTICS SERVICE ROUTE
+        # 5. ANALYTICS SERVICE ROUTE
         - id: analytics-service-route
-          uri: lb://ANALYTICS-SERVICE
+          uri: lb://analytics-service
           predicates:
             - Path=/api/v1/analytics/**
+
+        # 6. NOTIFICATION SERVICE ROUTE
+        - id: notification-service-route
+          uri: lb://notification-service
+          predicates:
+            - Path=/api/v1/notifications/**
 
 eureka:
   client:
@@ -456,11 +457,18 @@ public interface RestaurantClient {
 ### 5.4. Payment & Invoice Service (Port: 8084)
 * **Trách nhiệm:** Sinh mã VietQR chuẩn EMVCo động, lắng nghe Webhook ngân hàng với chữ ký HMAC-SHA256, bắn event vào Kafka topic `payment.events`.
 
-### 5.5. Notification & Real-time Service (Port: 8085)
-* **Trách nhiệm:** Duy trì kết nối WebSocket STOMP với các Web Client và Tablet Lễ tân, tiêu thụ Kafka events để broadcast trạng thái bàn theo thời gian thực `/topic/restaurant/{id}/floor-map`.
-
-### 5.6. Analytics & Audit Service (Port: 8086)
+### 5.5. Analytics & Audit Service (Port: 8085)
 * **Trách nhiệm:** Tiêu thụ sự kiện từ Kafka để tính toán chỉ số **RevPASH**, tỷ lệ **No-Show**, và ma trận nhiệt **Heatmap** các vị trí bàn đắt khách nhất.
+
+### 5.6. Notification Service (Port: 8086)
+* **Trách nhiệm:** 
+  * Tiêu thụ Kafka event từ topic `notification.email.sent` qua `KafkaNotificationConsumer`.
+  * Soạn thảo và gửi email HTML Responsive chuẩn qua JavaMailSender (kết nối Gmail SMTP).
+  * Hỗ trợ 2 mẫu email cốt lõi:
+    1. **Email Yêu cầu Thanh toán Cọc (Deposit Request):** Hiển thị mã đơn `#BK...`, số tiền cọc, mã VietQR động để khách quét thanh toán, thông tin người đặt và hạn chót giữ chỗ.
+    2. **Email Vé Điện Tử Check-in (E-Ticket):** Hiển thị mã đơn `#BK...`, mã QR Check-in động 64 ký tự chống giả mạo, thông tin phân khu bàn, hướng dẫn tiếp tân sảnh và chính sách dùng bữa 5 sao.
+  * Cơ chế chống gửi email trùng lặp (Anti-duplicate Delivery) nhờ lọc riêng topic nghiệp vụ email.
+  * Hỗ trợ thông báo tiệc sự kiện VIP (`EVENT_INQUIRY`) qua topic `booking.event-inquiry.consulted`.
 
 ---
 
@@ -604,11 +612,17 @@ public class DistributedReservationService {
 ```
 [PostgreSQL Database Instance Cluster]
   ├── Database: tablemaster_auth        (Quản lý Users, Roles, Refresh Tokens)
-  ├── Database: tablemaster_restaurant  (Quản lý Restaurants, Floor Plans JSONB, Tables, Slots)
-  ├── Database: tablemaster_booking     (Quản lý Bookings, Booking_Tables, Outbox Table)
-  ├── Database: tablemaster_payment     (Quản lý Transactions, Webhook Logs, Refunds)
+  ├── Database: tablemaster_restaurant  (Master Data: Nhà hàng, Danh mục Bàn ăn vật lý tĩnh 'tables', Thực đơn món ăn 'menu_items', Khung giờ ca 'time_slots')
+  ├── Database: tablemaster_booking     (Runtime Operational Engine: Đơn đặt 'bookings' [SEATED/COMPLETED], Liên kết bàn 'booking_tables', Món gọi tại bàn 'table_order_items', Nhật ký chuyển bàn 'table_operations_audit', 'outbox_events')
+  ├── Database: tablemaster_payment     (Quản lý Giao dịch cọc 'payment_transactions', Webhook Logs MoMo/VietQR, Hoàn tiền)
   ├── Database: tablemaster_analytics   (Quản lý Daily Stats, Turnover, RevPASH Aggregate)
 ```
+
+> **Lưu ý Kiến trúc phân định Master Data vs Runtime Transactions:**  
+> * Bảng `tables` trong database `tablemaster_restaurant` chỉ đóng vai trò là **Danh mục cấu hình tĩnh** (Mã bàn, loại phân khu Zone, sức chứa min/max, cọc tùy biến). Bảng này **không lưu trạng thái động** như bàn đang mở hay danh sách món khách đang ăn.  
+> * Toàn bộ thông tin vận hành thời gian thực được lưu tại `tablemaster_booking`:
+>   * Trạng thái khách ngồi (`SEATED`), thời điểm nhận bàn (`seated_at`), hoàn tất trả bàn (`completed_at`) được lưu trong bảng **`bookings`**.
+>   * Danh sách món gọi thêm tại bàn qua Waiter POS Mobile được lưu chi tiết trong bảng **`table_order_items`** (mã món, tên món, số lượng, đơn giá, trạng thái `PREPARING` / `SERVED`).
 
 ### 8.2. Giải quyết Bài toán Dual-Write bằng Transactional Outbox Pattern
 

@@ -115,7 +115,7 @@ export const ETicketModal: React.FC<ETicketModalProps> = ({
       guestCount: b.partySize,
       tableCode: b.tableCode,
       floorNumber: b.floor,
-      floorName: b.floor === 3 ? 'Tầng 3 (Sky Lounge Rooftop)' : b.floor === 2 ? 'Tầng 2 (VIP Salon Cellar)' : 'Tầng 1 (Grand Bistro)',
+      floorName: b.floor === 3 ? 'Khu Sky Lounge Rooftop' : b.floor === 2 ? 'Phòng VIP Salon Cellar' : 'Sảnh Grand Bistro & Bar',
       totalDeposit: b.depositAmount,
       status: b.status,
       isConfirmed: b.status === 'CONFIRMED' || b.status === 'CHECKED_IN',
@@ -453,7 +453,7 @@ export const ETicketModal: React.FC<ETicketModalProps> = ({
                   <h4 className="font-serif font-bold text-sm text-[#2C221E] pb-2 border-b border-[#E8DFD1] flex items-center justify-between">
                     <span>Thông Tin Đặt Bàn & Vị Trí</span>
                     <span className="font-mono text-xs text-amber-800 font-semibold">
-                      {ticket?.floorName || 'Tầng 1 (Grand Bistro)'}
+                      {ticket?.floorName || 'Sảnh Grand Bistro & Bar'}
                     </span>
                   </h4>
 

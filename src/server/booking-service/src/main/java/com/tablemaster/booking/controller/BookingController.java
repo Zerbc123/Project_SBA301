@@ -56,10 +56,10 @@ public class BookingController {
 
     /**
      * GET /api/v1/bookings/{id}
-     * Xem chi tiết một đơn đặt bàn
+     * Xem chi tiết một đơn đặt bàn (hỗ trợ cả UUID lẫn bookingCode)
      */
     @GetMapping("/{id}")
-    public ResponseEntity<ApiResponse<BookingResponse>> getBookingById(@PathVariable UUID id) {
+    public ResponseEntity<ApiResponse<BookingResponse>> getBookingById(@PathVariable String id) {
         BookingResponse response = bookingService.getBookingById(id);
         return ResponseEntity.ok(ApiResponse.success(response));
     }
@@ -98,9 +98,19 @@ public class BookingController {
      * POST /api/v1/bookings/{id}/approve-and-request-deposit
      * Lễ tân Telesales duyệt đơn & gửi yêu cầu cọc tiền qua VietQR
      */
+    /**
+     * POST /api/v1/bookings/{id}/confirm-payment
+     * Xác nhận thanh toán thành công cho đơn đặt bàn (hỗ trợ REST API trực tiếp và Kafka)
+     */
+    @PostMapping("/{id}/confirm-payment")
+    public ResponseEntity<ApiResponse<Object>> confirmPaymentDirect(@PathVariable String id) {
+        bookingService.confirmBookingAfterPayment(id);
+        return ResponseEntity.ok(ApiResponse.success("Xác nhận thanh toán cọc thành công", Map.of("bookingId", id, "status", "CONFIRMED")));
+    }
+
     @PostMapping("/{id}/approve-and-request-deposit")
     public ResponseEntity<ApiResponse<BookingResponse>> approveAndRequestDeposit(
-            @PathVariable UUID id,
+            @PathVariable String id,
             @Valid @RequestBody ApproveDepositRequest request,
             @RequestHeader(value = "X-User-Id", required = false) UUID staffId) {
         BookingResponse response = bookingService.approveAndRequestDeposit(id, request, staffId);
@@ -148,9 +158,19 @@ public class BookingController {
      * Hoàn tất dịch vụ sau khi khách thanh toán toàn bộ hóa đơn
      */
     @PostMapping("/{id}/complete")
-    public ResponseEntity<ApiResponse<BookingResponse>> completeBooking(@PathVariable UUID id) {
+    public ResponseEntity<ApiResponse<BookingResponse>> completeBooking(@PathVariable String id) {
         BookingResponse response = bookingService.completeBooking(id);
         return ResponseEntity.ok(ApiResponse.success("Hoàn tất bữa ăn thành công", response));
+    }
+
+    /**
+     * POST /api/v1/bookings/{id}/checkin
+     * Check-in trực tiếp nhận bàn cho khách
+     */
+    @PostMapping("/{id}/checkin")
+    public ResponseEntity<ApiResponse<BookingResponse>> checkInDirect(@PathVariable String id) {
+        BookingResponse response = bookingService.checkInDirect(id);
+        return ResponseEntity.ok(ApiResponse.success("Check-in nhận bàn thành công", response));
     }
 
     /**
@@ -222,7 +242,7 @@ public class BookingController {
      */
     @PutMapping("/{id}/event-consultation")
     public ResponseEntity<ApiResponse<BookingResponse>> updateEventConsultation(
-            @PathVariable UUID id,
+            @PathVariable String id,
             @Valid @RequestBody com.tablemaster.booking.dto.request.UpdateEventConsultationRequest request,
             @RequestHeader(value = "X-User-Id", required = false) UUID managerUserId) {
         BookingResponse response = bookingService.updateEventConsultation(id, request, managerUserId);

@@ -83,7 +83,9 @@ export interface BookingDetails {
   depositAmount: number;
   totalEstimatedAmount: number;
   createdAt: string;
-  status: 'PENDING_DEPOSIT' | 'CONFIRMED' | 'CHECKED_IN' | 'COMPLETED' | 'CANCELLED' | 'EVENT_INQUIRY';
+  checkinQrToken?: string;
+  rawStatus?: string;
+  status: 'PENDING_DEPOSIT' | 'PENDING_REVIEW' | 'AWAITING_PAYMENT' | 'CONFIRMED' | 'CHECKED_IN' | 'SEATED' | 'COMPLETED' | 'CANCELLED' | 'EVENT_INQUIRY' | string;
   vietqrCode: string;
 }
 
