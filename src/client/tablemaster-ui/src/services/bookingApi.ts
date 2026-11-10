@@ -478,6 +478,87 @@ export const bookingApi = {
   },
 
   /**
+   * 4b. Xác nhận thanh toán tiền cọc thành công (Chuyển sang CONFIRMED & sinh QR 64 ký tự)
+   * POST /api/v1/bookings/{id}/confirm-payment
+   */
+  async confirmBookingPayment(id: string): Promise<ApiResponse<BackendBooking>> {
+    const res = await fetch(`${BASE_URL}/${id}/confirm-payment`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-User-Id': SEED_DATA.USER_ID,
+      },
+    });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ message: 'Lỗi xác nhận thanh toán cọc' }));
+      throw new Error(err.message || 'Lỗi xác nhận thanh toán cọc');
+    }
+
+    return res.json();
+  },
+
+  /**
+   * 4c. Khởi tạo giao dịch thanh toán cọc trên payment-service (UC-11)
+   * POST /api/v1/payments/momo/create
+   */
+  async createMomoPayment(payload: {
+    bookingId: string;
+    userId?: string;
+    amount: number;
+    orderInfo?: string;
+  }): Promise<ApiResponse<{
+    orderId: string;
+    requestId: string;
+    amount: number;
+    payUrl?: string;
+    deeplink?: string;
+    qrCodeUrl?: string;
+    resultCode: number;
+    message: string;
+  }>> {
+    const res = await fetch('/api/v1/payments/momo/create', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        bookingId: ensureUUID(payload.bookingId, SEED_DATA.BOOKING_ID),
+        userId: payload.userId || SEED_DATA.USER_ID,
+        amount: payload.amount,
+        orderInfo: payload.orderInfo || `Thanh toan coc giu ban TableMaster`,
+      }),
+    });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ message: `Lỗi khởi tạo thanh toán (${res.status})` }));
+      throw new Error(err.message || 'Không thể khởi tạo giao dịch thanh toán');
+    }
+
+    return res.json();
+  },
+
+  /**
+   * 4d. Kích hoạt giả lập Webhook IPN thanh toán thành công trên payment-service (UC-11)
+   * POST /api/v1/payments/momo/mock-ipn/{transactionCode}
+   */
+  async triggerMomoMockIpn(transactionCode: string): Promise<ApiResponse<string>> {
+    const res = await fetch(`/api/v1/payments/momo/mock-ipn/${encodeURIComponent(transactionCode)}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ message: `Lỗi xác thực IPN (${res.status})` }));
+      throw new Error(err.message || 'Không thể xác thực IPN');
+    }
+
+    return res.json();
+  },
+
+  /**
    * 5. Lễ tân từ chối đơn
    * POST /api/v1/bookings/{id}/reject
    */
