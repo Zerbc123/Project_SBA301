@@ -348,8 +348,16 @@ public class BookingServiceImpl implements BookingService {
 
         if (booking.getStatus() == BookingStatus.AWAITING_PAYMENT
                 || booking.getStatus() == BookingStatus.PENDING_REVIEW
+                || booking.getStatus() == BookingStatus.EVENT_INQUIRY
                 || booking.getStatus() == BookingStatus.CONFIRMED) {
             booking.setStatus(BookingStatus.CONFIRMED);
+            // Tự động đồng bộ trạng thái biên bản tư vấn sang ACCEPTED khi khách đã thanh toán cọc
+            if (booking.getManagerCallStatus() == null
+                    || "PENDING_CALL".equals(booking.getManagerCallStatus())
+                    || "CALLED".equals(booking.getManagerCallStatus())
+                    || "PROPOSAL_SENT".equals(booking.getManagerCallStatus())) {
+                booking.setManagerCallStatus("ACCEPTED");
+            }
             String salt = booking.getQrSecretSalt() != null ? booking.getQrSecretSalt() : QrSecurityUtil.generateSecretSalt();
             int counter = booking.getQrRotationCounter() != null ? booking.getQrRotationCounter() : 1;
             booking.setQrSecretSalt(salt);
@@ -684,12 +692,25 @@ public class BookingServiceImpl implements BookingService {
         }
 
         // Chuyển trạng thái nếu có chỉ định (VD: AWAITING_PAYMENT, CONFIRMED, REJECTED)
+        // Bảo vệ không cho hạ cấp trạng thái của đơn đã thanh toán (CONFIRMED / SEATED / COMPLETED) về chờ cọc
         if (request.getTargetBookingStatus() != null) {
             try {
                 BookingStatus targetStatus = BookingStatus.valueOf(request.getTargetBookingStatus());
-                booking.setStatus(targetStatus);
-                if (targetStatus == BookingStatus.AWAITING_PAYMENT) {
-                    booking.setPaymentDeadline(ZonedDateTime.now().plusHours(2));
+                boolean alreadyPaidOrBeyond = booking.getStatus() == BookingStatus.CONFIRMED
+                        || booking.getStatus() == BookingStatus.SEATED
+                        || booking.getStatus() == BookingStatus.COMPLETED;
+                boolean isDowngradeAttempt = targetStatus == BookingStatus.AWAITING_PAYMENT
+                        || targetStatus == BookingStatus.PENDING_REVIEW
+                        || targetStatus == BookingStatus.EVENT_INQUIRY;
+
+                if (alreadyPaidOrBeyond && isDowngradeAttempt) {
+                    log.info("Keeping booking {} at {} (ignoring downgrade attempt to {})",
+                            booking.getBookingCode(), booking.getStatus(), targetStatus);
+                } else {
+                    booking.setStatus(targetStatus);
+                    if (targetStatus == BookingStatus.AWAITING_PAYMENT) {
+                        booking.setPaymentDeadline(ZonedDateTime.now().plusHours(2));
+                    }
                 }
             } catch (IllegalArgumentException e) {
                 log.warn("Invalid target booking status: {}", request.getTargetBookingStatus());

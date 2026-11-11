@@ -153,6 +153,7 @@ export function App() {
   }, []);
 
   const [newBookingAlert, setNewBookingAlert] = useState<{ code: string; name: string; guests: number } | null>(null);
+  const [paymentSuccessAlert, setPaymentSuccessAlert] = useState<{ code: string; name: string; deposit: number } | null>(null);
 
   // Bản đồ đối chiếu Table UUID PostgreSQL sang id & code bàn của sơ đồ sảnh
   const UUID_TO_TABLE_INFO: Record<string, { id: string; code: string; floor: 1 | 2 | 3 }> = {
@@ -245,6 +246,29 @@ export function App() {
                   guests: newest.partySize,
                 });
                 setTimeout(() => setNewBookingAlert(null), 8000);
+              }
+
+              // Phát hiện đơn vừa được khách thanh toán cọc thành công (AWAITING_PAYMENT/PENDING -> CONFIRMED)
+              const prevByKey = new Map(
+                prev.map((p) => [p.bookingCode || p.bookingId || p.backendUUID, p])
+              );
+              const newlyPaid = mapped.find((m) => {
+                const key = m.bookingCode || m.bookingId || m.backendUUID;
+                const oldItem = prevByKey.get(key);
+                return (
+                  oldItem &&
+                  oldItem.status !== 'CONFIRMED' &&
+                  m.status === 'CONFIRMED'
+                );
+              });
+
+              if (newlyPaid) {
+                setPaymentSuccessAlert({
+                  code: newlyPaid.bookingCode || newlyPaid.bookingId,
+                  name: newlyPaid.customerName,
+                  deposit: newlyPaid.depositAmount || 0,
+                });
+                setTimeout(() => setPaymentSuccessAlert(null), 10000);
               }
             }
 
@@ -720,6 +744,53 @@ export function App() {
             <button
               type="button"
               onClick={() => setNewBookingAlert(null)}
+              className="text-slate-400 hover:text-white p-1 cursor-pointer"
+            >
+              ✕
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Toast thông báo khách vừa thanh toán cọc thành công (Real-time Polling -> CONFIRMED) */}
+      <AnimatePresence>
+        {paymentSuccessAlert && (
+          <motion.div
+            initial={{ opacity: 0, y: -40, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -20, scale: 0.95 }}
+            className="fixed top-20 right-6 z-50 max-w-md p-4 bg-gradient-to-r from-emerald-900 via-teal-900 to-slate-900 text-white rounded-2xl shadow-2xl border-2 border-emerald-400/80 flex items-start gap-3 backdrop-blur-md"
+          >
+            <div className="w-10 h-10 rounded-xl bg-emerald-400 text-slate-950 flex items-center justify-center font-bold text-lg shrink-0 animate-pulse">
+              💳
+            </div>
+            <div className="flex-1 space-y-1">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[10px] uppercase font-bold tracking-wider text-emerald-200 bg-emerald-500/30 px-2 py-0.5 rounded-full border border-emerald-400/50">
+                  ✅ KHÁCH ĐÃ THANH TOÁN CỌC
+                </span>
+                <span className="text-[10px] text-emerald-200 font-mono">CONFIRMED</span>
+              </div>
+              <p className="text-xs font-bold text-white">
+                Khách: <span className="text-emerald-200">{paymentSuccessAlert.name}</span> (#{paymentSuccessAlert.code})
+              </p>
+              <p className="text-[11px] text-slate-200">
+                Đã nhận cọc <strong>{new Intl.NumberFormat('vi-VN').format(paymentSuccessAlert.deposit)} đ</strong>. Đơn &amp; biên bản đã đồng bộ trạng thái xác nhận!
+              </p>
+              <button
+                type="button"
+                onClick={() => {
+                  setPaymentSuccessAlert(null);
+                  handleNavigate('host');
+                }}
+                className="mt-1 text-[11px] font-bold text-emerald-300 hover:text-white underline cursor-pointer"
+              >
+                👉 Mở Màn Hình Lễ Tân Xem Biên Bản
+              </button>
+            </div>
+            <button
+              type="button"
+              onClick={() => setPaymentSuccessAlert(null)}
               className="text-slate-400 hover:text-white p-1 cursor-pointer"
             >
               ✕

@@ -146,7 +146,7 @@ export const HostTabletPage: React.FC<HostTabletPageProps> = ({
 
   // UC-10: Private Banquet & Event Inquiries Drawer State
   const [isEventDrawerOpen, setIsEventDrawerOpen] = useState(false);
-  const [eventFilter, setEventFilter] = useState<'ALL' | 'PENDING' | 'CONSULTED'>('ALL');
+  const [eventFilter, setEventFilter] = useState<'ALL' | 'PENDING' | 'CONSULTED' | 'PAID'>('ALL');
   const [selectedInquiryForCall, setSelectedInquiryForCall] = useState<BookingDetails | null>(null);
   const [consultationCallStatus, setConsultationCallStatus] = useState<'CALLED' | 'PROPOSAL_SENT' | 'ACCEPTED' | 'REJECTED'>('CALLED');
   const [consultationNotesInput, setConsultationNotesInput] = useState('');
@@ -175,12 +175,18 @@ export const HostTabletPage: React.FC<HostTabletPageProps> = ({
       b.consultationNotes != null ||
       (b.managerCallStatus && b.managerCallStatus !== 'PENDING_CALL')
   );
+  const isInquiryPaid = (b: BookingDetails) =>
+    b.status === 'CONFIRMED' || b.status === 'SEATED' || b.status === 'COMPLETED';
   const pendingEventInquiries = eventInquiries.filter(
     (b) =>
       (b.status === 'PENDING_REVIEW' || b.status === 'EVENT_INQUIRY') &&
       (!b.managerCallStatus || b.managerCallStatus === 'PENDING_CALL')
   );
   const pendingInquiriesCount = pendingEventInquiries.length;
+  const paidInquiriesCount = eventInquiries.filter(isInquiryPaid).length;
+  const consultedWaitingCount = eventInquiries.filter(
+    (b) => !isInquiryPaid(b) && b.managerCallStatus && b.managerCallStatus !== 'PENDING_CALL'
+  ).length;
 
   const calculateSlaRemainingSeconds = (inquiry: BookingDetails): number => {
     if (inquiry.callbackDeadline) {
@@ -200,16 +206,44 @@ export const HostTabletPage: React.FC<HostTabletPageProps> = ({
 
   const handleOpenConsultationModal = (inquiry: BookingDetails) => {
     setSelectedInquiryForCall(inquiry);
+    const paid = isInquiryPaid(inquiry);
     setConsultationCallStatus(
-      inquiry.managerCallStatus && inquiry.managerCallStatus !== 'PENDING_CALL'
+      paid
+        ? 'ACCEPTED'
+        : inquiry.managerCallStatus && inquiry.managerCallStatus !== 'PENDING_CALL'
         ? inquiry.managerCallStatus
         : 'CALLED'
     );
     setConsultationNotesInput(inquiry.consultationNotes || '');
     setAgreedBudgetInput(inquiry.estimatedBudget || (inquiry.depositAmount ? inquiry.depositAmount * 2 : 2000000));
     setAgreedDepositInput(inquiry.depositAmount || 200000);
-    // Khi tư vấn chốt đơn, trạng thái tiếp theo chuẩn là AWAITING_PAYMENT để gửi email nạp cọc
-    setTargetBookingStatus('AWAITING_PAYMENT');
+    // Bảo vệ giữ nguyên trạng thái đã thanh toán (CONFIRMED/SEATED/COMPLETED), không hạ ngược về AWAITING_PAYMENT
+    setTargetBookingStatus(paid ? inquiry.status : 'AWAITING_PAYMENT');
+  };
+
+  const handleConfirmConsultedPaid = async (inquiry: BookingDetails) => {
+    const bookingIdentifier = inquiry.backendUUID || inquiry.bookingCode || inquiry.bookingId;
+    try {
+      await bookingApi.updateEventConsultation(bookingIdentifier, {
+        managerCallStatus: 'ACCEPTED',
+        consultationNotes:
+          inquiry.consultationNotes ||
+          `Khách đã hoàn tất thanh toán cọc ${new Intl.NumberFormat('vi-VN').format(inquiry.depositAmount || 0)} đ trực tuyến. Biên bản được xác nhận hoàn tất.`,
+        agreedBudget: inquiry.estimatedBudget,
+        agreedDeposit: inquiry.depositAmount,
+        targetBookingStatus: inquiry.status,
+      });
+      if (onUpdateBooking) {
+        onUpdateBooking({
+          ...inquiry,
+          managerCallStatus: 'ACCEPTED',
+        });
+      }
+      showToast(`✅ Đã chốt biên bản & xác nhận nhận cọc đơn #${inquiry.bookingCode || inquiry.bookingId}!`);
+    } catch (err) {
+      console.warn('Lỗi chốt biên bản đã cọc:', err);
+      showToast('Không thể cập nhật biên bản lúc này, vui lòng thử lại.');
+    }
   };
 
   const handleSimulateCall = (inquiry: BookingDetails) => {
@@ -251,7 +285,11 @@ export const HostTabletPage: React.FC<HostTabletPageProps> = ({
         onUpdateBooking(updatedBooking);
       }
 
-      showToast(`✅ Đã lưu biên bản & chuyển đơn sang [${targetBookingStatus}], email cọc đã được gửi tới Quý khách!`);
+      if (targetBookingStatus === 'AWAITING_PAYMENT') {
+        showToast(`✅ Đã lưu biên bản & chuyển đơn sang [AWAITING_PAYMENT], email cọc đã được gửi tới Quý khách!`);
+      } else {
+        showToast(`✅ Đã lưu & đồng bộ biên bản tư vấn đơn [#${selectedInquiryForCall.bookingCode || selectedInquiryForCall.bookingId}] (${targetBookingStatus})!`);
+      }
       setSelectedInquiryForCall(null);
     } catch (err: any) {
       console.warn('Lỗi lưu tư vấn:', err);
@@ -3295,11 +3333,12 @@ export const HostTabletPage: React.FC<HostTabletPageProps> = ({
             </div>
 
             {/* Filter Tabs */}
-            <div className="flex items-center gap-2 shrink-0">
+            <div className="flex flex-wrap items-center gap-2 shrink-0">
               {[
                 { id: 'ALL', label: `Tất Cả (${eventInquiries.length})` },
                 { id: 'PENDING', label: `🚨 Cần Gọi Ngay (${pendingInquiriesCount})` },
-                { id: 'CONSULTED', label: `✅ Đã Tư Vấn (${eventInquiries.length - pendingInquiriesCount})` },
+                { id: 'CONSULTED', label: `📋 Chờ Khách Cọc (${consultedWaitingCount})` },
+                { id: 'PAID', label: `💳 Đã Thanh Toán (${paidInquiriesCount})` },
               ].map((tab) => (
                 <button
                   key={tab.id}
@@ -3307,7 +3346,9 @@ export const HostTabletPage: React.FC<HostTabletPageProps> = ({
                   onClick={() => setEventFilter(tab.id as any)}
                   className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
                     eventFilter === tab.id
-                      ? 'bg-purple-900 text-white shadow-xs'
+                      ? tab.id === 'PAID'
+                        ? 'bg-emerald-700 text-white shadow-xs'
+                        : 'bg-purple-900 text-white shadow-xs'
                       : 'bg-[#FAF7F2] text-[#6B5E54] hover:bg-stone-100 border border-[#E8DFD1]'
                   }`}
                 >
@@ -3320,20 +3361,25 @@ export const HostTabletPage: React.FC<HostTabletPageProps> = ({
             <div className="flex-1 overflow-y-auto space-y-4 pr-1">
               {eventInquiries
                 .filter((inquiry) => {
-                  if (eventFilter === 'PENDING') return inquiry.managerCallStatus === 'PENDING_CALL' || !inquiry.managerCallStatus;
-                  if (eventFilter === 'CONSULTED') return inquiry.managerCallStatus && inquiry.managerCallStatus !== 'PENDING_CALL';
+                  const paid = isInquiryPaid(inquiry);
+                  if (eventFilter === 'PENDING') return !paid && (inquiry.managerCallStatus === 'PENDING_CALL' || !inquiry.managerCallStatus);
+                  if (eventFilter === 'CONSULTED') return !paid && inquiry.managerCallStatus && inquiry.managerCallStatus !== 'PENDING_CALL';
+                  if (eventFilter === 'PAID') return paid;
                   return true;
                 })
                 .map((inquiry) => {
                   const remSec = calculateSlaRemainingSeconds(inquiry);
-                  const isPending = inquiry.managerCallStatus === 'PENDING_CALL' || !inquiry.managerCallStatus;
+                  const paid = isInquiryPaid(inquiry);
+                  const isPending = !paid && (inquiry.managerCallStatus === 'PENDING_CALL' || !inquiry.managerCallStatus);
                   const isCalling = simulatedCallInquiryId === inquiry.bookingId;
 
                   return (
                     <div
                       key={inquiry.bookingId}
                       className={`p-5 rounded-2xl border transition-all ${
-                        isPending
+                        paid
+                          ? 'bg-emerald-50/35 border-emerald-300 shadow-xs'
+                          : isPending
                           ? 'bg-purple-50/40 border-purple-200 shadow-xs'
                           : 'bg-white border-[#E8DFD1]'
                       }`}
@@ -3367,7 +3413,18 @@ export const HostTabletPage: React.FC<HostTabletPageProps> = ({
 
                         {/* 15-Minute SLA Countdown or Status Badge */}
                         <div>
-                          {isPending ? (
+                          {paid ? (
+                            <span className="text-xs font-bold px-3 py-1 rounded-xl border bg-emerald-100 text-emerald-900 border-emerald-400 flex items-center gap-1.5 shadow-2xs">
+                              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-700" />
+                              <span>
+                                {inquiry.status === 'SEATED'
+                                  ? '🍽️ Khách Đã Nhận Bàn (Đã Cọc)'
+                                  : inquiry.status === 'COMPLETED'
+                                  ? '🎉 Đã Hoàn Tất Bữa Ăn'
+                                  : '💳 Đã Thanh Toán Cọc (CONFIRMED)'}
+                              </span>
+                            </span>
+                          ) : isPending ? (
                             remSec > 600 ? (
                               <span className="text-xs font-bold text-emerald-800 bg-emerald-100 border border-emerald-300 px-3 py-1 rounded-xl flex items-center gap-1.5 font-mono">
                                 <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
@@ -3395,7 +3452,7 @@ export const HostTabletPage: React.FC<HostTabletPageProps> = ({
                             }`}>
                               <span>
                                 {inquiry.managerCallStatus === 'ACCEPTED'
-                                  ? '🥂 Đã Chốt Tiệc / Nhận Cọc'
+                                  ? '🥂 Đã Chốt Tiệc / Chờ Cọc'
                                   : inquiry.managerCallStatus === 'PROPOSAL_SENT'
                                   ? '📋 Đã Gửi Thực Đơn'
                                   : inquiry.managerCallStatus === 'CALLED'
@@ -3456,7 +3513,9 @@ export const HostTabletPage: React.FC<HostTabletPageProps> = ({
                           </div>
                           {inquiry.depositAmount > 0 && (
                             <div className="flex items-center justify-between pt-1 border-t border-stone-200">
-                              <span className="text-emerald-700 font-semibold">Tiền cọc đã ghi nhận:</span>
+                              <span className="text-emerald-700 font-semibold">
+                                {paid ? 'Tiền cọc đã thanh toán:' : 'Tiền cọc đã ghi nhận:'}
+                              </span>
                               <strong className="text-emerald-800 font-mono font-bold">
                                 {new Intl.NumberFormat('vi-VN').format(inquiry.depositAmount)} đ
                               </strong>
@@ -3464,6 +3523,33 @@ export const HostTabletPage: React.FC<HostTabletPageProps> = ({
                           )}
                         </div>
                       </div>
+
+                      {/* Payment Confirmed Banner inside Card */}
+                      {paid && (
+                        <div className="mt-3 p-3.5 rounded-xl bg-emerald-100/70 border border-emerald-400 text-xs text-emerald-950 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                          <div className="space-y-0.5">
+                            <p className="font-bold text-emerald-900 flex items-center gap-1.5">
+                              <span>💳 Khách đã thanh toán cọc thành công qua cổng trực tuyến!</span>
+                            </p>
+                            <p className="text-[11px] text-emerald-800 leading-relaxed">
+                              Hệ thống đã tự động chuyển trạng thái đơn sang <strong>{inquiry.status}</strong> và phát hành Vé Điện Tử QR.
+                              {inquiry.managerCallStatus !== 'ACCEPTED'
+                                ? ' Nhân viên vui lòng bấm "Chốt Biên Bản Đã Cọc" hoặc mở "Chỉnh Sửa Biên Bản" để cập nhật trạng thái biên bản.'
+                                : ' Biên bản tư vấn đã được chốt hoàn tất.'}
+                            </p>
+                          </div>
+                          {inquiry.managerCallStatus !== 'ACCEPTED' && (
+                            <button
+                              type="button"
+                              onClick={() => handleConfirmConsultedPaid(inquiry)}
+                              className="shrink-0 px-3.5 py-2 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs flex items-center gap-1.5 shadow-xs cursor-pointer transition-all"
+                            >
+                              <Check className="w-3.5 h-3.5" />
+                              <span>Chốt Biên Bản Đã Cọc</span>
+                            </button>
+                          )}
+                        </div>
+                      )}
 
                       {/* AV & Decor Badges */}
                       <div className="pt-3 flex flex-wrap items-center gap-2">
@@ -3543,7 +3629,11 @@ export const HostTabletPage: React.FC<HostTabletPageProps> = ({
                           className="px-4 py-2 rounded-xl bg-purple-900 hover:bg-purple-800 text-white font-bold text-xs flex items-center gap-1.5 shadow-xs cursor-pointer transition-all"
                         >
                           <Edit3 className="w-3.5 h-3.5 text-amber-300" />
-                          <span>{inquiry.consultationNotes ? 'Chỉnh Sửa Biên Bản' : 'Lập Biên Bản Tư Vấn'}</span>
+                          <span>
+                            {inquiry.consultationNotes || (inquiry.managerCallStatus && inquiry.managerCallStatus !== 'PENDING_CALL')
+                              ? 'Chỉnh Sửa Biên Bản'
+                              : 'Lập Biên Bản Tư Vấn'}
+                          </span>
                         </button>
                       </div>
                     </div>
@@ -3636,16 +3726,25 @@ export const HostTabletPage: React.FC<HostTabletPageProps> = ({
                 <label className="font-bold text-[#2C221E] block">
                   Cập Nhật Trạng Thái Đơn Hàng Booking:
                 </label>
-                <select
-                  value={targetBookingStatus}
-                  onChange={(e) => setTargetBookingStatus(e.target.value as any)}
-                  className="w-full px-3 py-2.5 rounded-xl border border-[#E8DFD1] bg-white text-xs font-semibold text-[#2C221E] focus:outline-none focus:border-purple-600"
-                >
-                  <option value="AWAITING_PAYMENT">⭐ AWAITING_PAYMENT (Khách chốt đặt cọc - Hệ thống gửi link VietQR/MoMo qua email)</option>
-                  <option value="CONFIRMED">CONFIRMED (Khách đã cọc trực tiếp tại quầy / chuyển khoản ngay - Khóa bàn & cấp vé QR)</option>
-                  <option value="PENDING_REVIEW">PENDING_REVIEW (Chờ liên hệ lại sau)</option>
-                  <option value="CANCELLED">CANCELLED (Hủy đơn đặt bàn / Không liên hệ được khách)</option>
-                </select>
+                {isInquiryPaid(selectedInquiryForCall) ? (
+                  <div className="px-3.5 py-2.5 rounded-xl border border-emerald-300 bg-emerald-50 text-xs font-bold text-emerald-900 flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-700 shrink-0" />
+                    <span>
+                      Đơn đã thanh toán cọc thành công ({selectedInquiryForCall.status}) — Hệ thống tự động bảo toàn trạng thái đã xác nhận.
+                    </span>
+                  </div>
+                ) : (
+                  <select
+                    value={targetBookingStatus}
+                    onChange={(e) => setTargetBookingStatus(e.target.value as any)}
+                    className="w-full px-3 py-2.5 rounded-xl border border-[#E8DFD1] bg-white text-xs font-semibold text-[#2C221E] focus:outline-none focus:border-purple-600"
+                  >
+                    <option value="AWAITING_PAYMENT">⭐ AWAITING_PAYMENT (Khách chốt đặt cọc - Hệ thống gửi link VietQR/MoMo qua email)</option>
+                    <option value="CONFIRMED">CONFIRMED (Khách đã cọc trực tiếp tại quầy / chuyển khoản ngay - Khóa bàn & cấp vé QR)</option>
+                    <option value="PENDING_REVIEW">PENDING_REVIEW (Chờ liên hệ lại sau)</option>
+                    <option value="CANCELLED">CANCELLED (Hủy đơn đặt bàn / Không liên hệ được khách)</option>
+                  </select>
+                )}
               </div>
 
               {/* Consultation Notes */}
