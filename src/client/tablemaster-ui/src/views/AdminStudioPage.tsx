@@ -23,6 +23,7 @@ import {
 } from 'lucide-react';
 import type { TableItem, BookingDetails } from '../types';
 import { authApi, type AdminUserItem } from '../services/authApi';
+import { paymentApi, type PaymentTransactionResponse } from '../services/paymentApi';
 
 interface AdminStudioPageProps {
   tables: TableItem[];
@@ -52,6 +53,41 @@ export const AdminStudioPage: React.FC<AdminStudioPageProps> = ({
   const [setPasswordModalUser, setSetPasswordModalUser] = useState<AdminUserItem | null>(null);
   const [newPasswordValue, setNewPasswordValue] = useState<string>('');
   const [syncFeedback, setSyncFeedback] = useState<string | null>(null);
+
+  // Cashflow Management State (Payment Service API)
+  const [transactions, setTransactions] = useState<PaymentTransactionResponse[]>([]);
+  const [isCashflowLoading, setIsCashflowLoading] = useState(false);
+  const [cashflowError, setCashflowError] = useState<string | null>(null);
+
+  const fetchCashflowTransactions = async () => {
+    setIsCashflowLoading(true);
+    setCashflowError(null);
+    try {
+      const res = await paymentApi.getAllTransactions();
+      if (res.success && Array.isArray(res.data)) {
+        const sorted = [...res.data].sort((a, b) => {
+          const timeA = new Date(a.paidAt || a.createdAt || 0).getTime();
+          const timeB = new Date(b.paidAt || b.createdAt || 0).getTime();
+          return timeB - timeA;
+        });
+        setTransactions(sorted);
+      } else {
+        setTransactions([]);
+        setCashflowError(res.message || 'Không thể tải dữ liệu dòng tiền từ Payment Service.');
+      }
+    } catch (err: any) {
+      setTransactions([]);
+      setCashflowError(err?.message || 'Lỗi kết nối Payment Service.');
+    } finally {
+      setIsCashflowLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'cashflow') {
+      fetchCashflowTransactions();
+    }
+  }, [activeTab]);
 
   const fetchUsers = async () => {
     setIsUsersLoading(true);
@@ -162,7 +198,6 @@ export const AdminStudioPage: React.FC<AdminStudioPageProps> = ({
 
   // Calculate totals
   const totalSecuredDeposits = bookings.reduce((sum, b) => sum + b.depositAmount, 0);
-  const totalEstShiftRevenue = 48500000;
 
   // Staff roster sample data
   const staffList = [
@@ -172,13 +207,91 @@ export const AdminStudioPage: React.FC<AdminStudioPageProps> = ({
     { id: 'st-4', name: 'Antoine Nguyễn', role: 'Head Sommelier', zone: 'Quầy Bar Mixology', status: 'ON_SHIFT', avatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=120&q=80' },
   ];
 
-  // Cash flow log sample data
-  const cashflowLogs = [
-    { id: 'tx-8829', bookingId: 'BK-8829', customer: 'Nguyễn Trần Bảo Anh', amount: 300000, time: '18:15:20', bank: 'Vietcombank • 998822', status: 'SUCCESS' },
-    { id: 'tx-8830', bookingId: 'BK-8830', customer: 'Trần Đăng Khoa', amount: 500000, time: '18:24:45', bank: 'Techcombank • 112233', status: 'SUCCESS' },
-    { id: 'tx-8831', bookingId: 'BK-8831', customer: 'Lê Thu Trang (VIP)', amount: 500000, time: '18:40:10', bank: 'MBBank • 887766', status: 'SUCCESS' },
-    { id: 'tx-8832', bookingId: 'BK-8832', customer: 'Phạm Hoàng Nam', amount: 200000, time: '19:02:15', bank: 'ACB • 334455', status: 'SUCCESS' },
-  ];
+  // Real Cashflow calculations from Payment Service + Bookings
+  const bookingByIdMap = new Map<string, BookingDetails>();
+  bookings.forEach((b) => {
+    if (b.backendUUID) {
+      bookingByIdMap.set(b.backendUUID.toLowerCase(), b);
+    }
+  });
+
+  const successTransactions = transactions.filter((t) => t.status === 'SUCCESS');
+  const pendingTransactions = transactions.filter((t) => t.status === 'PENDING');
+  const totalSuccessTransactionAmount = successTransactions.reduce(
+    (sum, t) => sum + Number(t.amount || 0),
+    0
+  );
+  const totalPendingTransactionAmount = pendingTransactions.reduce(
+    (sum, t) => sum + Number(t.amount || 0),
+    0
+  );
+  const confirmedBookingDeposits = bookings
+    .filter((b) =>
+      ['CONFIRMED', 'SEATED', 'COMPLETED', 'CHECKED_IN'].includes(
+        String(b.rawStatus || b.status).toUpperCase()
+      )
+    )
+    .reduce((sum, b) => sum + Number(b.depositAmount || 0), 0);
+  const paymentSuccessRate =
+    transactions.length > 0
+      ? Math.round((successTransactions.length / transactions.length) * 1000) / 10
+      : 0;
+
+  const filteredCashflowTransactions = transactions.filter((txn) => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return true;
+    const matchedBooking = bookingByIdMap.get((txn.bookingId || '').toLowerCase());
+    return (
+      (txn.transactionCode || '').toLowerCase().includes(q) ||
+      (txn.transferContent || '').toLowerCase().includes(q) ||
+      (txn.bankTransactionId || '').toLowerCase().includes(q) ||
+      (txn.paymentMethod || '').toLowerCase().includes(q) ||
+      (txn.bookingId || '').toLowerCase().includes(q) ||
+      (matchedBooking?.bookingCode || '').toLowerCase().includes(q) ||
+      (matchedBooking?.bookingId || '').toLowerCase().includes(q) ||
+      (matchedBooking?.customerName || '').toLowerCase().includes(q) ||
+      (matchedBooking?.phone || '').includes(searchQuery.trim())
+    );
+  });
+
+  const formatTransactionTime = (iso?: string) => {
+    if (!iso) return '—';
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return iso;
+    return d.toLocaleString('vi-VN', {
+      day: '2-digit',
+      month: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    });
+  };
+
+  const getTransactionStatusBadge = (status: PaymentTransactionResponse['status']) => {
+    switch (status) {
+      case 'SUCCESS':
+        return {
+          label: 'Đã Đối Soát',
+          cls: 'bg-[#ECFDF5] text-[#065F46] border-[#A7F3D0]',
+        };
+      case 'PENDING':
+        return {
+          label: 'Chờ Thanh Toán',
+          cls: 'bg-[#FFFBEB] text-[#92400E] border-[#FDE68A]',
+        };
+      case 'REFUNDED':
+        return {
+          label: 'Đã Hoàn Tiền',
+          cls: 'bg-[#EFF6FF] text-[#1E40AF] border-[#BFDBFE]',
+        };
+      case 'FAILED':
+      default:
+        return {
+          label: status === 'FAILED' ? 'Thất Bại' : status,
+          cls: 'bg-[#FEF2F2] text-[#991B1B] border-[#FECACA]',
+        };
+    }
+  };
 
   return (
     <div className="w-full min-h-[calc(100vh-80px)] flex bg-[#FAF7F2] overflow-x-hidden">
@@ -489,35 +602,57 @@ export const AdminStudioPage: React.FC<AdminStudioPageProps> = ({
           <div className="space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               <div className="bg-white border border-[#EBE5DC] rounded-2xl p-5 shadow-xs space-y-2">
-                <span className="text-xs font-bold text-[#78716C] uppercase">Tổng Tiền Cọc Đã Thu</span>
+                <span className="text-xs font-bold text-[#78716C] uppercase">Tổng Cọc Đã Đối Soát (Payment DB)</span>
                 <div className="text-2xl font-serif font-bold text-[#8C6A43]">
-                  {new Intl.NumberFormat('vi-VN').format(totalSecuredDeposits)} đ
+                  {new Intl.NumberFormat('vi-VN').format(totalSuccessTransactionAmount)} đ
                 </div>
-                <span className="text-[10px] font-semibold text-[#3D7058]">100% Giao dịch thành công</span>
+                <span className="text-[10px] font-semibold text-[#3D7058]">
+                  {successTransactions.length}/{transactions.length} giao dịch thành công
+                </span>
               </div>
 
               <div className="bg-white border border-[#EBE5DC] rounded-2xl p-5 shadow-xs space-y-2">
-                <span className="text-xs font-bold text-[#78716C] uppercase">Doanh Thu Dự Kiến Ca</span>
+                <span className="text-xs font-bold text-[#78716C] uppercase">Tổng Cọc Theo Đơn Đã Xác Nhận</span>
                 <div className="text-2xl font-serif font-bold text-[#1C1917]">
-                  {new Intl.NumberFormat('vi-VN').format(totalEstShiftRevenue)} đ
+                  {new Intl.NumberFormat('vi-VN').format(confirmedBookingDeposits)} đ
                 </div>
-                <span className="text-[10px] font-semibold text-[#8C6A43]">+18.4% so với ca trước</span>
+                <span className="text-[10px] font-semibold text-[#8C6A43]">
+                  Đang chờ thanh toán: {new Intl.NumberFormat('vi-VN').format(totalPendingTransactionAmount)} đ ({pendingTransactions.length} GD)
+                </span>
               </div>
 
               <div className="bg-white border border-[#EBE5DC] rounded-2xl p-5 shadow-xs space-y-2">
-                <span className="text-xs font-bold text-[#78716C] uppercase">Tỷ Lệ Xác Thực VietQR</span>
-                <div className="text-2xl font-serif font-bold text-[#3D7058]">98.5%</div>
-                <span className="text-[10px] font-semibold text-[#78716C]">Tự động đối soát ngân hàng</span>
+                <span className="text-xs font-bold text-[#78716C] uppercase">Tỷ Lệ Xác Thực Thanh Toán</span>
+                <div className="text-2xl font-serif font-bold text-[#3D7058]">{paymentSuccessRate}%</div>
+                <span className="text-[10px] font-semibold text-[#78716C]">
+                  Dữ liệu trực tiếp từ payment-service
+                </span>
               </div>
             </div>
 
             <div className="bg-white border border-[#EBE5DC] rounded-2xl p-6 shadow-xs space-y-5">
               <div className="flex items-center justify-between pb-3 border-b border-[#EBE5DC]">
-                <h3 className="font-serif text-lg font-bold text-[#1C1917]">
-                  Lịch Sử Giao Dịch Cọc VietQR Trực Tiếp
-                </h3>
-                <CreditCard className="w-4 h-4 text-[#C4A480]" />
+                <div className="flex items-center gap-2">
+                  <CreditCard className="w-4 h-4 text-[#C4A480]" />
+                  <h3 className="font-serif text-lg font-bold text-[#1C1917]">
+                    Lịch Sử Giao Dịch Cọc & Thanh Toán Trực Tiếp
+                  </h3>
+                </div>
+                <button
+                  onClick={fetchCashflowTransactions}
+                  disabled={isCashflowLoading}
+                  className="px-3 py-1.5 rounded-full border border-[#E0D7C9] bg-[#FAF7F2] hover:bg-[#F3ECE0] text-[11px] font-semibold text-[#8C6A43] inline-flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${isCashflowLoading ? 'animate-spin' : ''}`} />
+                  <span>{isCashflowLoading ? 'Đang tải...' : 'Làm Mới'}</span>
+                </button>
               </div>
+
+              {cashflowError && (
+                <div className="p-3 rounded-xl bg-[#FEF2F2] border border-[#FECACA] text-xs text-[#991B1B]">
+                  {cashflowError}
+                </div>
+              )}
 
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-xs">
@@ -526,28 +661,72 @@ export const AdminStudioPage: React.FC<AdminStudioPageProps> = ({
                       <th className="py-2.5 px-3">Thời Gian</th>
                       <th className="py-2.5 px-3">Mã Booking</th>
                       <th className="py-2.5 px-3">Khách Hàng</th>
-                      <th className="py-2.5 px-3">Ngân Hàng / Mã Giao Dịch</th>
+                      <th className="py-2.5 px-3">Cổng / Mã Giao Dịch</th>
                       <th className="py-2.5 px-3">Số Tiền</th>
                       <th className="py-2.5 px-3 text-right">Trạng Thái</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-[#FAF7F2]">
-                    {cashflowLogs.map((log) => (
-                      <tr key={log.id} className="hover:bg-[#FAF7F2]">
-                        <td className="py-3 px-3 text-[#78716C] font-mono">{log.time}</td>
-                        <td className="py-3 px-3 font-mono font-bold text-[#8C6A43]">{log.bookingId}</td>
-                        <td className="py-3 px-3 font-semibold text-[#1C1917]">{log.customer}</td>
-                        <td className="py-3 px-3 font-mono text-[11px] text-[#44403C]">{log.bank}</td>
-                        <td className="py-3 px-3 font-mono font-bold text-[#1C1917]">
-                          {new Intl.NumberFormat('vi-VN').format(log.amount)} đ
-                        </td>
-                        <td className="py-3 px-3 text-right">
-                          <span className="px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-[#ECFDF5] text-[#065F46] border border-[#A7F3D0]">
-                            Đã Đối Soát
-                          </span>
+                    {isCashflowLoading && transactions.length === 0 ? (
+                      <tr>
+                        <td colSpan={6} className="py-8 text-center text-[#78716C]">
+                          Đang tải lịch sử giao dịch từ Payment Service...
                         </td>
                       </tr>
-                    ))}
+                    ) : filteredCashflowTransactions.length === 0 ? (
+                      <tr>
+                        <td colSpan={6} className="py-8 text-center text-[#78716C]">
+                          Chưa có giao dịch thanh toán nào khớp bộ lọc.
+                        </td>
+                      </tr>
+                    ) : (
+                      filteredCashflowTransactions.map((txn) => {
+                        const matchedBooking = bookingByIdMap.get((txn.bookingId || '').toLowerCase());
+                        const badge = getTransactionStatusBadge(txn.status);
+                        const displayBookingCode =
+                          matchedBooking?.bookingCode ||
+                          matchedBooking?.bookingId ||
+                          (txn.bookingId ? txn.bookingId.substring(0, 8).toUpperCase() : '—');
+                        return (
+                          <tr key={txn.id} className="hover:bg-[#FAF7F2]">
+                            <td className="py-3 px-3 text-[#78716C] font-mono">
+                              {formatTransactionTime(txn.paidAt || txn.createdAt)}
+                            </td>
+                            <td className="py-3 px-3 font-mono font-bold text-[#8C6A43]">
+                              {displayBookingCode}
+                            </td>
+                            <td className="py-3 px-3">
+                              <div className="font-semibold text-[#1C1917]">
+                                {matchedBooking?.customerName || 'Khách Đặt Bàn'}
+                              </div>
+                              {matchedBooking?.phone && (
+                                <div className="text-[10px] text-[#78716C] font-mono">
+                                  {matchedBooking.phone}
+                                </div>
+                              )}
+                            </td>
+                            <td className="py-3 px-3 font-mono text-[11px] text-[#44403C]">
+                              <div>
+                                {txn.bankProvider || txn.paymentMethod} • {txn.bankTransactionId || txn.transactionCode}
+                              </div>
+                              {txn.transferContent && (
+                                <div className="text-[10px] text-[#78716C]">{txn.transferContent}</div>
+                              )}
+                            </td>
+                            <td className="py-3 px-3 font-mono font-bold text-[#1C1917]">
+                              {new Intl.NumberFormat('vi-VN').format(Number(txn.amount || 0))} đ
+                            </td>
+                            <td className="py-3 px-3 text-right">
+                              <span
+                                className={`px-2.5 py-0.5 rounded-full text-[10px] font-semibold border ${badge.cls}`}
+                              >
+                                {badge.label}
+                              </span>
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
                   </tbody>
                 </table>
               </div>

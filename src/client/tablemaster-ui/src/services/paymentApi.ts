@@ -158,5 +158,22 @@ export const paymentApi = {
   async getTransaction(transactionCode: string): Promise<ApiResponse<PaymentTransactionResponse>> {
     return request<PaymentTransactionResponse>(`/api/v1/payments/momo/${transactionCode}`);
   },
+
+  /**
+   * Lấy toàn bộ lịch sử giao dịch thanh toán cho Admin Studio
+   * GET /api/v1/payments/transactions
+   */
+  async getAllTransactions(): Promise<ApiResponse<PaymentTransactionResponse[]>> {
+    try {
+      return await request<PaymentTransactionResponse[]>('/api/v1/payments/transactions');
+    } catch (e: any) {
+      console.warn('⚠️ [paymentApi] Không thể tải danh sách giao dịch:', e.message);
+      return {
+        success: false,
+        message: e.message || 'Không thể kết nối Payment Service',
+        data: [],
+      };
+    }
+  },
 };
 
