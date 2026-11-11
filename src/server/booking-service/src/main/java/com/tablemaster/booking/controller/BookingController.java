@@ -98,16 +98,6 @@ public class BookingController {
      * POST /api/v1/bookings/{id}/approve-and-request-deposit
      * Lễ tân Telesales duyệt đơn & gửi yêu cầu cọc tiền qua VietQR
      */
-    /**
-     * POST /api/v1/bookings/{id}/confirm-payment
-     * Xác nhận thanh toán thành công cho đơn đặt bàn (hỗ trợ REST API trực tiếp và Kafka)
-     */
-    @PostMapping("/{id}/confirm-payment")
-    public ResponseEntity<ApiResponse<Object>> confirmPaymentDirect(@PathVariable String id) {
-        bookingService.confirmBookingAfterPayment(id);
-        return ResponseEntity.ok(ApiResponse.success("Xác nhận thanh toán cọc thành công", Map.of("bookingId", id, "status", "CONFIRMED")));
-    }
-
     @PostMapping("/{id}/approve-and-request-deposit")
     public ResponseEntity<ApiResponse<BookingResponse>> approveAndRequestDeposit(
             @PathVariable String id,
@@ -120,10 +110,11 @@ public class BookingController {
     /**
      * POST /api/v1/bookings/{id}/confirm-payment
      * Xác nhận đơn đặt bàn đã hoàn tất thanh toán cọc (chuyển sang CONFIRMED & cấp mã QR động 64 ký tự)
+     * Hỗ trợ cả UUID lẫn bookingCode (REST API trực tiếp và Kafka)
      */
     @PostMapping("/{id}/confirm-payment")
     public ResponseEntity<ApiResponse<BookingResponse>> confirmBookingAfterPayment(
-            @PathVariable UUID id) {
+            @PathVariable String id) {
         BookingResponse response = bookingService.confirmBookingAfterPayment(id);
         return ResponseEntity.ok(ApiResponse.success("Xác nhận thanh toán cọc thành công! Đã phát hành Vé điện tử QR.", response));
     }

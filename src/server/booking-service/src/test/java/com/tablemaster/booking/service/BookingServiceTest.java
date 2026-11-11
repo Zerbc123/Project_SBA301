@@ -113,8 +113,17 @@ class BookingServiceTest {
                 .tableIds(List.of(tableId))
                 .build();
 
+
+        // Giả lập bàn yêu cầu lẫn toàn bộ danh sách bàn dự phòng đều đã có người đặt
         when(bookingRepository.findBookedTableIds(eq(bookingDate), eq(timeSlotId), anyList()))
-                .thenReturn(List.of(tableId));
+                .thenReturn(List.of(
+                        tableId,
+                        UUID.fromString("b3000000-0000-0000-0000-000000000001"),
+                        UUID.fromString("b3000000-0000-0000-0000-000000000002"),
+                        UUID.fromString("b3000000-0000-0000-0000-000000000003"),
+                        UUID.fromString("b3000000-0000-0000-0000-000000000004"),
+                        UUID.fromString("b3000000-0000-0000-0000-000000000005")
+                ));
 
         assertThrows(TableAlreadyBookedException.class, () -> bookingService.createBooking(request, userId));
         verify(bookingRepository, never()).save(any());
