@@ -46,7 +46,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate, onOpenBanq
     {
       id: 'space-1',
       title: 'Sảnh Chính Nguyễn Huệ (Main Hall)',
-      location: 'Tầng 1 • Hướng Nguyễn Huệ View',
+      location: 'Khu Sảnh Chính • Hướng Nguyễn Huệ View',
       capacity: '45 Bàn • Phù hợp 2-6 Khách',
       image: 'https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?auto=format&fit=crop&w=1200&q=80',
       floor: 1 as const,
@@ -55,7 +55,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate, onOpenBanq
     {
       id: 'space-2',
       title: 'Phòng Tiệc Private VIP Cellar',
-      location: 'Tầng 2 • Hầm Vang Độc Bản',
+      location: 'Khu Phòng VIP • Hầm Vang Độc Bản',
       capacity: '2 Phòng VIP • 8-16 Khách',
       image: 'https://images.unsplash.com/photo-1550966871-3ed3cdb5ed0c?auto=format&fit=crop&w=1200&q=80',
       floor: 2 as const,
@@ -64,7 +64,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate, onOpenBanq
     {
       id: 'space-3',
       title: 'Sky Lounge Outdoor Terrace',
-      location: 'Tầng 3 • Ban Công Rooftop Sunset',
+      location: 'Khu Sân Vườn • Ban Công Sunset',
       capacity: '12 Bàn • Phù hợp Hò Hẹn & Tiệc Đêm',
       image: 'https://images.unsplash.com/photo-1578474846511-04ba529f0b88?auto=format&fit=crop&w=1200&q=80',
       floor: 3 as const,
@@ -73,7 +73,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onNavigate, onOpenBanq
     {
       id: 'space-4',
       title: 'Quầy Bar Mixology Marble & Velvet',
-      location: 'Tầng 1 • Quầy Bar Trung Tâm',
+      location: 'Khu Quầy Bar Mixology',
       capacity: '15 Ghế Bar Da Bò Cổ Điển',
       image: 'https://images.unsplash.com/photo-1510812431401-41d2bd2722f3?auto=format&fit=crop&w=1200&q=80',
       floor: 1 as const,

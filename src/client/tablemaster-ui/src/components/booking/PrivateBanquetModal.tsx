@@ -154,13 +154,8 @@ export const PrivateBanquetModal: React.FC<PrivateBanquetModalProps> = ({
         throw new Error(res.message || 'Không thể gửi đơn đặt tiệc');
       }
     } catch (err: any) {
-      console.warn('Fallback local submission for Event Inquiry:', err);
-      // Fallback offline demo
-      const fakeCode = `EV${new Date().toISOString().slice(2, 10).replace(/-/g, '')}001`;
-      setSubmittedBooking({
-        bookingCode: fakeCode,
-        callbackDeadline: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
-      });
+      console.error('Lỗi gửi đơn sự kiện:', err);
+      setErrorMsg(err.message || 'Không thể gửi đơn đặt tiệc sự kiện. Vui lòng thử lại!');
     } finally {
       setIsSubmitting(false);
     }
@@ -260,7 +255,7 @@ export const PrivateBanquetModal: React.FC<PrivateBanquetModalProps> = ({
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
                   {[
                     { id: 'COMPANY_PARTY', label: 'Tiệc Doanh Nghiệp / Year End', icon: '🏢' },
-                    { id: 'ROOFTOP_BUYOUT', label: 'Bao Trọn Tầng 3 Rooftop', icon: '🌆' },
+                    { id: 'ROOFTOP_BUYOUT', label: 'Bao Trọn Khu Sky Rooftop', icon: '🌆' },
                     { id: 'BIRTHDAY_GALA', label: 'Sinh Nhật Thượng Đỉnh', icon: '🎂' },
                     { id: 'WORKSHOP', label: 'Hội Thảo / Workshop / Họp Báo', icon: '🎤' },
                     { id: 'WEDDING_BANQUET', label: 'Tiệc Cưới / Đính Hôn Riêng Tư', icon: '💍' },
@@ -288,27 +283,27 @@ export const PrivateBanquetModal: React.FC<PrivateBanquetModalProps> = ({
               {/* 2. Chọn Tầng Bao Trọn & Số Lượng Khách */}
               <div className="space-y-3 pt-2 border-t border-[#E8DFD1]">
                 <label className="text-xs font-bold text-[#2C221E] uppercase tracking-wider block">
-                  2. Chọn Không Gian Bao Trọn Tầng:
+                  2. Chọn Không Gian / Phân Khu Tổ Chức Tiệc:
                 </label>
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                   {[
                     {
                       floor: 3,
-                      title: 'Tầng 3: Sky Lounge Rooftop',
+                      title: 'Khu Sky Lounge Rooftop',
                       capacity: '40 - 70 khách',
                       desc: 'Tầm nhìn Panorama hoàng hôn & đêm Sài Gòn, ban công lộng gió.',
                       badge: 'Hot nhất tiệc đêm',
                     },
                     {
                       floor: 2,
-                      title: 'Tầng 2: Salon VIP & Wine Cellar',
+                      title: 'Khu Salon VIP & Wine Cellar',
                       capacity: '20 - 45 khách',
                       desc: 'Không gian ấm cúng, acoustic cách âm riêng biệt, tủ rượu Grand Cru.',
                       badge: 'Riêng tư tối thượng',
                     },
                     {
                       floor: 1,
-                      title: 'Tầng 1: Grand Bistro & Bar',
+                      title: 'Khu Grand Bistro & Bar',
                       capacity: '60 - 100 khách',
                       desc: 'Không gian tráng lệ, quầy Mixology trung tâm, diện tích lớn nhất.',
                       badge: 'Quy mô tiệc lớn',

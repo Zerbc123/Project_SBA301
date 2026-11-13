@@ -36,7 +36,7 @@ spring:
         - id: auth-service
           uri: lb://auth-service
           predicates:
-            - Path=/api/v1/auth/**, /api/v1/users/**
+            - Path=/api/v1/auth/**, /api/v1/users/**, /api/v1/reviews/**
 
         # Route 2: Restaurant & Table Service
         - id: restaurant-service
@@ -61,6 +61,12 @@ spring:
           uri: lb://analytics-service
           predicates:
             - Path=/api/v1/analytics/**
+
+        # Route 6: Notification & Email Service
+        - id: notification-service
+          uri: lb://notification-service
+          predicates:
+            - Path=/api/v1/notifications/**
 
 eureka:
   client:

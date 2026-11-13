@@ -32,14 +32,15 @@ Module 5 (**Analytics & BI Service**) đóng vai trò là trung tâm phân tích
   * Tách bạch rõ ràng trong doanh thu ca:
     $$\text{Tổng Doanh Thu Ca} = \text{Tiền Ăn Uống (Food Bill)} + \text{Tiền Phạt Bùng Cọc (No-Show Penalty)}$$
 
-### 2. UC-33: Bản đồ Nhiệt Vị trí Bàn ăn (Table Popularity Heatmap)
+### 2. UC-33: Phân tích Xếp hạng Độ Hot Bàn ăn Dạng Thẻ Box cho Quản Trị (Admin Table Box Heatmap Analytics)
 * **Mức độ ưu tiên:** Low | **Đợt triển khai:** Iteration 2 (12/10/2026 - 09/11/2026)
-* **Xếp hạng độ Hot của bàn:** Phân loại 18 bàn ăn theo 4 cấp độ nhiệt:
-  * 🔴 **HOT (Đỏ):** Độ hot > 80% (Bàn được săn đón nhiều nhất, doanh thu bùng nổ).
-  * 🟡 **WARM (Vàng):** Độ hot 50% - 80% (Bàn ưa thích).
-  * 🟢 **NORMAL (Xanh lá):** Độ hot 30% - 50% (Bàn thông thường).
-  * 🔵 **COOL (Xanh dương):** Độ hot < 30% (Bàn ít người chọn, cần tối ưu chương trình khuyến mãi).
-* **Lọc theo 5 phân khu kiến trúc:** Private VIP (`PRIVATE_VIP`), Sân vườn (`OUTDOOR`), Cửa sổ ngắm cảnh (`WINDOW_VIEW`), Quầy Bar (`BAR_COUNTER`), và Tiêu chuẩn (`STANDARD`).
+* **Giao diện nội bộ Admin Studio:** Hiển thị dưới dạng Lưới Thẻ Box Bàn (Grid Cards), tuyệt đối bảo mật nội bộ, không public ra cho khách hàng.
+* **Xếp hạng độ Hot của bàn:** Phân loại 18 thẻ box bàn ăn theo 4 cấp độ nhiệt màu sắc:
+  * 🔴 **HOT (Đỏ):** Độ hot $\ge$ 75% (Bàn được săn đón nhiều nhất, doanh thu bùng nổ).
+  * 🟡 **WARM (Vàng):** Độ hot 50% - 74% (Bàn ưa thích).
+  * 🟢 **NORMAL (Xanh lá):** Độ hot 25% - 49% (Bàn thông thường).
+  * 🔵 **COOL (Xanh dương):** Độ hot < 25% (Bàn ít người chọn, cần tối ưu chương trình khuyến mãi).
+* **Lọc thẻ box theo 5 phân khu kiến trúc:** Private VIP (`PRIVATE_VIP`), Sân vườn (`OUTDOOR`), Cửa sổ ngắm cảnh (`WINDOW_VIEW`), Quầy Bar (`BAR_COUNTER`), và Tiêu chuẩn (`STANDARD`).
 
 ### 3. UC-34: Phân tích Hồ sơ & Phân hạng Khách hàng VIP (VIP Customer Insights & Loyalty CRM)
 * **Mức độ ưu tiên:** Medium | **Đợt triển khai:** Iteration 2 (12/10/2026 - 09/11/2026)

@@ -36,7 +36,7 @@ graph TD
 | **4.2** | **Module 2** | **Restaurant & Floor Service** | `8082` | **Thành viên 2** | Sơ đồ tầng 2D, Canvas Builder, Menu món ăn, Cấu hình ca giờ & Khóa bàn bảo trì. | **6 UC** |
 | **4.3** | **Module 3** | **Booking & Dispatch Service** | `8083` | **Thành viên 3** | Vòng đời đơn đặt bàn, Khóa Redis Redlock 5p, Tablet Lễ tân Live, Bếp KDS, App Waitstaff & Workers ngầm. | **19 UC** |
 | **4.4** | **Module 4** | **Payment & VietQR Service** | `8084` | **Thành viên 4** | Sinh mã VietQR EMVCo, Webhook HMAC-SHA256, Quản lý Escrow, Ma trận hoàn cọc & Đối soát ca. | **6 UC** |
-| **4.5** | **Module 5** | **Analytics & BI Service** | `8085` | **Thành viên 5** | Phân tích RevPASH, Tỷ lệ No-Show, Xoay vòng bàn và Bản đồ nhiệt (Heatmap) trên sơ đồ. | **2 UC** |
+| **4.5** | **Module 5** | **Analytics & BI Service** | `8085` | **Thành viên 5** | Phân tích RevPASH, Tỷ lệ No-Show, Xoay vòng bàn và Xếp hạng độ hot thẻ box bàn (Admin Only). | **2 UC** |
 
 ---
 
@@ -122,12 +122,12 @@ graph TD
 ### 4.5. Module 5 (Thành viên 5): Analytics & BI Service (Port: 8085)
 
 * **Công nghệ & Trách nhiệm:** Spring Boot, PostgreSQL OLAP, Chart.js / Recharts, Heatmap Generator.
-* **Mục tiêu:** Xử lý và trực quan hóa dữ liệu kinh doanh, tính toán các chỉ số quản trị nhà hàng cao cấp (RevPASH, No-show, Turnover rate) và sinh bản đồ nhiệt độ vị trí bàn ăn.
+* **Mục tiêu:** Xử lý và trực quan hóa dữ liệu kinh doanh, tính toán các chỉ số quản trị nhà hàng cao cấp (RevPASH, No-show, Turnover rate) và thống kê độ hot thẻ box bàn theo từng phân khu cho quản trị viên.
 
 | Mã UC | Tên Use Case | Độ ưu tiên | Vai trò trong Service |
 | :---: | :--- | :---: | :--- |
 | **UC-31** | **Báo cáo Doanh thu, RevPASH & Tỷ lệ No-Show (Revenue & RevPASH Analytics)** | High | Phân tích tài chính & vận hành:<br>• **RevPASH:** Doanh thu trên mỗi ghế khả dụng theo giờ.<br>• **Tỷ lệ xoay vòng bàn:** Số lượt khách ngồi trên mỗi bàn trong ca.<br>• **Tỷ lệ No-Show:** Đo lường xu hướng khách bùng hẹn theo ngày trong tuần. |
-| **UC-32** | **Bản đồ Nhiệt Vị trí Bàn ăn (Table Popularity Heatmap)** | Low | Trực quan hóa tần suất đặt bàn trên sơ đồ 2D: tô màu **Đỏ cam** cho các bàn hot (view cửa sổ kính, góc sofa) và **Xanh nhạt** cho các bàn vắng khách để tối ưu sắp xếp không gian. |
+| **UC-32** | **Phân tích Xếp hạng Độ Hot Bàn ăn Dạng Thẻ Box cho Quản Trị (Admin Table Box Heatmap Analytics)** | Low | Trực quan hóa dữ liệu kinh doanh dưới dạng lưới Thẻ Box Bàn (Grid Cards) theo từng phân khu (VIP, Cửa sổ, Sân vườn, Bar), phân loại 4 màu sắc nhiệt độ (HOT đỏ, WARM vàng, NORMAL xanh lá, COOL xanh dương) dành riêng cho Admin quản lý doanh thu bàn; tuyệt đối không public ra ngoài cho khách. |
 
 ---
 
@@ -166,7 +166,7 @@ graph TD
 | 29 | **UC-29** | Quản lý Thực đơn, Món Đặt trước & Biểu cọc| Module 2 | Restaurant & Floor Service | 8082 | Thành viên 2 | High |
 | 30 | **UC-30** | Cấu hình Ngày lễ & Blackout Dates | Module 2 | Restaurant & Floor Service | 8082 | Thành viên 2 | Medium |
 | 31 | **UC-31** | Báo cáo Doanh thu, RevPASH & No-Show | Module 5 | Analytics & BI Service | 8085 | Thành viên 5 | High |
-| 32 | **UC-32** | Bản đồ Nhiệt Vị trí Bàn ăn (Heatmap) | Module 5 | Analytics & BI Service | 8085 | Thành viên 5 | Low |
+| 32 | **UC-32** | Xếp hạng Độ Hot Thẻ Box Bàn (Admin Only) | Module 5 | Analytics & BI Service | 8085 | Thành viên 5 | Low |
 | 33 | **UC-33** | App Phục Vụ Tại Bàn Di Động | Module 3 | Booking & Dispatch Service | 8083 | Thành viên 3 | High |
 | 34 | **UC-A1** | Worker Tự động Giải phóng Bàn quá hạn 5p | Module 3 | Booking & Dispatch Service | 8083 | Thành viên 3 | High |
 | 35 | **UC-A2** | Worker Tự động Phạt No-Show sau 15p | Module 3 & 4 | Booking (Status) & Payment (Phạt cọc)| 8083 / 8084 | TV 3 & TV 4 | High |

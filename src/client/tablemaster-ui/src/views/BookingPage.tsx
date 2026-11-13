@@ -31,16 +31,22 @@ import {
   ShoppingBag,
   Trash2,
   Shirt,
+  Loader2,
+  QrCode,
+  Download,
 } from 'lucide-react';
 import type { TableItem, SignatureDish, BookingDetails } from '../types';
 import { SIGNATURE_DISHES } from '../data/mockData';
 import { QRPaymentModal } from '../components/common/QRPaymentModal';
+import { ETicketModal } from '../components/booking/ETicketModal';
 import {
   bookingApi,
   ensureUUID,
+  getDishUUID,
   SEED_DATA,
   type CreateBookingRequestPayload,
 } from '../services/bookingApi';
+import { restaurantApi } from '../services/restaurantApi';
 
 const OCCASIONS = [
   { id: 'date', label: 'Hẹn hò lãng mạn', icon: Heart },
@@ -116,6 +122,49 @@ const HOT_SLOTS = [
   { slot: '20:00 - 22:00', startTime: '20:00', shift: 'Bữa Tối (Muộn)' },
 ];
 
+const getNextAvailableSlot = (selectedDateISO: string): { slot: string; time: string } => {
+  const now = new Date();
+  const todayISO = formatDateToISO(now);
+
+  if (selectedDateISO > todayISO) {
+    return { slot: '19:00 - 21:00', time: '19:00' };
+  }
+
+  // Hôm nay: Tìm khung giờ đầu tiên chưa trôi qua (bắt đầu sau ít nhất 15 phút từ bây giờ)
+  const nowMinutes = now.getHours() * 60 + now.getMinutes() + 15;
+
+  for (const t of DINNER_SLOTS_15M) {
+    const m = t.match(/^(\d{1,2}):(\d{2})/);
+    if (m) {
+      const slotMin = parseInt(m[1], 10) * 60 + parseInt(m[2], 10);
+      if (slotMin > nowMinutes) {
+        return { slot: `${t} - 22:30`, time: t };
+      }
+    }
+  }
+
+  for (const t of LUNCH_SLOTS_15M) {
+    const m = t.match(/^(\d{1,2}):(\d{2})/);
+    if (m) {
+      const slotMin = parseInt(m[1], 10) * 60 + parseInt(m[2], 10);
+      if (slotMin > nowMinutes) {
+        return { slot: `${t} - 14:00`, time: t };
+      }
+    }
+  }
+
+  return { slot: '21:00 - 23:30', time: '21:00' };
+};
+
+const resolveSlotId = (timeStr: string): string => {
+  const match = timeStr.match(/^(\d{1,2}):(\d{2})/);
+  if (!match) return SEED_DATA.TIME_SLOT_ID;
+  const h = parseInt(match[1], 10);
+  if (h < 15) return 'b1000000-0000-0000-0000-000000000001'; // Ca trưa (11:00 - 13:00)
+  if (h <= 20) return 'b1000000-0000-0000-0000-000000000002'; // Ca tối Giờ Vàng (18:30 - 20:30)
+  return 'b1000000-0000-0000-0000-000000000003'; // Ca đêm Rooftop (21:00 - 23:30)
+};
+
 interface BookingPageProps {
   tables: TableItem[];
   initialFloor?: 1 | 2 | 3;
@@ -124,6 +173,7 @@ interface BookingPageProps {
   rebookData?: BookingDetails | null;
   onClearRebook?: () => void;
   onOpenBanquetModal?: () => void;
+  onNavigate?: (view: any) => void;
 }
 
 export const BookingPage: React.FC<BookingPageProps> = ({
@@ -134,6 +184,7 @@ export const BookingPage: React.FC<BookingPageProps> = ({
   rebookData,
   onClearRebook,
   onOpenBanquetModal,
+  onNavigate,
 }) => {
   // Toast thông báo Re-book 1 chạm
   const [rebookToast, setRebookToast] = useState<string | null>(null);
@@ -141,11 +192,21 @@ export const BookingPage: React.FC<BookingPageProps> = ({
   // Step 1: Time & Party
   const [showSection1, setShowSection1] = useState<boolean>(true);
   const [selectedDate, setSelectedDate] = useState<string>(() => formatDateToISO(new Date()));
-  const [selectedSlot, setSelectedSlot] = useState<string>('19:00 - 21:00');
+  const initialValidSlot = getNextAvailableSlot(formatDateToISO(new Date()));
+  const [selectedSlot, setSelectedSlot] = useState<string>(initialValidSlot.slot);
   const [isCustomTime, setIsCustomTime] = useState<boolean>(true);
-  const [customArrivalTime, setCustomArrivalTime] = useState<string>('19:00');
+  const [customArrivalTime, setCustomArrivalTime] = useState<string>(initialValidSlot.time);
   const [isTimePickerOpen, setIsTimePickerOpen] = useState<boolean>(false);
   const [partySize, setPartySize] = useState<number>(2);
+
+  // Tự động nhảy sang ca giờ hợp lệ tiếp theo khi chọn ngày hoặc giờ cũ đã trôi qua
+  useEffect(() => {
+    if (isTimeSlotPassed(customArrivalTime, selectedDate)) {
+      const next = getNextAvailableSlot(selectedDate);
+      setSelectedSlot(next.slot);
+      setCustomArrivalTime(next.time);
+    }
+  }, [selectedDate]);
 
   // Step 2: Dịp dùng bữa & Ghi chú chu đáo (Lễ tân sắp xếp bàn khi khách tới)
   const [showSection2, setShowSection2] = useState<boolean>(true);
@@ -155,6 +216,61 @@ export const BookingPage: React.FC<BookingPageProps> = ({
   // Step 3: Pre-orders
   const [selectedDishes, setSelectedDishes] = useState<Record<string, number>>({});
   const [showPreOrderSection, setShowPreOrderSection] = useState<boolean>(true);
+
+  // Danh sách món ăn từ Backend DB (fallback sang SIGNATURE_DISHES nếu chưa kết nối hoặc đang tải)
+  const [dishes, setDishes] = useState<SignatureDish[]>(SIGNATURE_DISHES);
+  const [isLoadingDishes, setIsLoadingDishes] = useState<boolean>(false);
+  const [isDbMenuConnected, setIsDbMenuConnected] = useState<boolean>(false);
+
+  // Tải danh sách món ăn từ Database qua restaurantApi
+  useEffect(() => {
+    let active = true;
+    setIsLoadingDishes(true);
+
+    restaurantApi
+      .getMenuItems(undefined, true)
+      .then((items) => {
+        if (!active) return;
+        if (Array.isArray(items) && items.length > 0) {
+          setIsDbMenuConnected(true);
+          const mapped: SignatureDish[] = items.map((it) => {
+            const matchedMock = SIGNATURE_DISHES.find(
+              (m) =>
+                m.id === it.id ||
+                m.name.toLowerCase().trim() === it.name.toLowerCase().trim()
+            );
+            return {
+              id: it.id,
+              name: it.name,
+              category: it.categoryName || matchedMock?.category || 'Món Chính',
+              price: Number(it.price) || 0,
+              originalPrice: matchedMock?.originalPrice,
+              description: it.description || matchedMock?.description || '',
+              image:
+                it.imageUrl ||
+                matchedMock?.image ||
+                'https://images.unsplash.com/photo-1544025162-d76694265947?auto=format&fit=crop&w=800&q=80',
+              badge: matchedMock?.badge,
+              prepTimeMinutes: matchedMock?.prepTimeMinutes || 15,
+              servingSize: matchedMock?.servingSize,
+              comboItems: matchedMock?.comboItems,
+            };
+          });
+          setDishes(mapped);
+          console.log(`✅ [BookingPage] Đã nạp thành công ${mapped.length} món ăn từ PostgreSQL Database`);
+        }
+      })
+      .catch((err) => {
+        console.warn('⚠️ [BookingPage] Dùng món ăn dự phòng do không thể gọi API menu:', err?.message || err);
+      })
+      .finally(() => {
+        if (active) setIsLoadingDishes(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
 
   // Tự động khôi phục dữ liệu khi khách bấm "Đặt lại bàn này" (Re-book 1-Chạm)
   useEffect(() => {
@@ -181,6 +297,39 @@ export const BookingPage: React.FC<BookingPageProps> = ({
   const [selectedMenuCategory, setSelectedMenuCategory] = useState<string>('ALL');
   const [expandedComboIds, setExpandedComboIds] = useState<Record<string, boolean>>({ 'combo-1': true });
 
+  // Danh mục món ăn linh hoạt từ Database
+  const availableCategories = React.useMemo(() => {
+    const uniqueCats = Array.from(new Set(dishes.map((d) => d.category).filter(Boolean)));
+
+    const getCategoryIcon = (name: string) => {
+      const lower = name.toLowerCase();
+      if (lower.includes('combo') || lower.includes('set')) return Sparkles;
+      if (lower.includes('bò') || lower.includes('steak') || lower.includes('chính')) return Flame;
+      if (lower.includes('vang') || lower.includes('rượu') || lower.includes('uống') || lower.includes('cellar')) return Wine;
+      if (lower.includes('khai vị') || lower.includes('tráng miệng') || lower.includes('salad') || lower.includes('bánh')) return Award;
+      return Utensils;
+    };
+
+    const getCategoryLabel = (name: string) => {
+      const lower = name.toLowerCase();
+      if (lower.includes('combo') || lower.includes('set')) return `🌟 ${name}`;
+      if (lower.includes('bò') || lower.includes('steak')) return `🥩 ${name}`;
+      if (lower.includes('vang') || lower.includes('rượu')) return `🍷 ${name}`;
+      if (lower.includes('tráng miệng') || lower.includes('khai vị') || lower.includes('bánh')) return `🍰 ${name}`;
+      return name;
+    };
+
+    return [
+      { id: 'ALL', label: 'Tất Cả', icon: Utensils, count: dishes.length },
+      ...uniqueCats.map((cat) => ({
+        id: cat,
+        label: getCategoryLabel(cat),
+        icon: getCategoryIcon(cat),
+        count: dishes.filter((d) => d.category === cat).length,
+      })),
+    ];
+  }, [dishes]);
+
   // Step 4: Policies
   const [showSection4, setShowSection4] = useState<boolean>(true);
 
@@ -197,8 +346,10 @@ export const BookingPage: React.FC<BookingPageProps> = ({
   const [customerPhone, setCustomerPhone] = useState<string>('0909123456');
   const [customerEmail, setCustomerEmail] = useState<string>('baoanh.nguyen@gmail.com');
 
-  // Payment modal state
+  // Payment & E-Ticket modal state
   const [isQRModalOpen, setIsQRModalOpen] = useState<boolean>(false);
+  const [isPendingReviewModalOpen, setIsPendingReviewModalOpen] = useState<boolean>(false);
+  const [isETicketModalOpen, setIsETicketModalOpen] = useState<boolean>(false);
   const [currentBooking, setCurrentBooking] = useState<BookingDetails | null>(null);
   const [bookingSuccess, setBookingSuccess] = useState<BookingDetails | null>(null);
   const [backendBookingUUID, setBackendBookingUUID] = useState<string>('');
@@ -233,7 +384,7 @@ export const BookingPage: React.FC<BookingPageProps> = ({
   };
 
   const dishesTotal = Object.entries(selectedDishes).reduce((sum, [dishId, qty]) => {
-    const dish = SIGNATURE_DISHES.find((d) => d.id === dishId);
+    const dish = dishes.find((d) => d.id === dishId) || SIGNATURE_DISHES.find((d) => d.id === dishId);
     return sum + (dish ? dish.price * qty : 0);
   }, 0);
 
@@ -242,6 +393,17 @@ export const BookingPage: React.FC<BookingPageProps> = ({
 
   // Find a matching table behind the scenes for internal reference
   const findMatchingTable = (): TableItem => {
+    // 1. Ưu tiên tìm bàn còn TRỐNG (AVAILABLE) và vừa sức chứa
+    const availableMatched = tables.find(
+      (t) => (t.status === 'AVAILABLE' || !t.status) && t.capacity >= partySize
+    );
+    if (availableMatched) return availableMatched;
+
+    // 2. Tìm bất kỳ bàn nào còn TRỐNG trong nhà hàng
+    const anyAvailable = tables.find((t) => t.status === 'AVAILABLE' || !t.status);
+    if (anyAvailable) return anyAvailable;
+
+    // 3. Fallback theo capacity
     const matched = tables.find((t) => t.capacity >= partySize);
     return matched || tables[0];
   };
@@ -259,6 +421,13 @@ export const BookingPage: React.FC<BookingPageProps> = ({
       return;
     }
 
+    // Chặn nghiêm ngặt nếu khách cố tình đặt khung giờ đã trôi qua trong ngày hôm nay
+    if (isTimeSlotPassed(effectiveTimeSlot, selectedDate)) {
+      alert(`⚠️ Khung giờ "${effectiveTimeSlot}" ngày hôm nay đã trôi qua. Quý khách vui lòng chọn khung giờ khác hoặc ngày khác!`);
+      setIsTimePickerOpen(true);
+      return;
+    }
+
     const assignedTable = findMatchingTable();
     const tableUUID = ensureUUID(assignedTable.id);
     const tableCode = 'Lễ tân sắp xếp khi đón khách';
@@ -266,18 +435,20 @@ export const BookingPage: React.FC<BookingPageProps> = ({
 
     const preOrderItems = Object.entries(selectedDishes)
       .map(([id, quantity]) => {
-        const dish = SIGNATURE_DISHES.find((d) => d.id === id);
+        const dish = dishes.find((d) => d.id === id) || SIGNATURE_DISHES.find((d) => d.id === id);
         return dish ? { dish, quantity } : null;
       })
       .filter((item): item is { dish: SignatureDish; quantity: number } => item !== null);
 
+    const arrivalPrefix = `[Giờ đến: ${effectiveTimeSlot}] `;
     const occasionText = selectedOccasion
       ? `[Dịp: ${OCCASIONS.find((o) => o.id === selectedOccasion)?.label}] `
       : '';
-    const fullNotes = `${occasionText}${customNotes}`.trim();
+    const fullNotes = `${arrivalPrefix}${occasionText}${customNotes}`.trim();
 
     setIsSubmitting(true);
     let realBookingCode = `BK-${Math.floor(1000 + Math.random() * 9000)}`;
+    let createdBackendUUID = '';
 
     // GỌI BACKEND THẬT QUA REST API: POST /api/v1/bookings/request
     try {
@@ -286,32 +457,42 @@ export const BookingPage: React.FC<BookingPageProps> = ({
         guestPhone: customerPhone,
         guestEmail: customerEmail || 'customer@leprimebistro.vn',
         bookingDate: selectedDate,
-        timeSlotId: SEED_DATA.TIME_SLOT_ID,
+        timeSlotId: resolveSlotId(effectiveTimeSlot),
         guestCount: partySize,
         tableIds: [tableUUID],
+        occasion: selectedOccasion || undefined,
         specialNotes: fullNotes,
-        totalDeposit: depositRequired,
+        totalDeposit: grandTotal,
         preorderItems: preOrderItems.map((p) => ({
-          menuItemId: SEED_DATA.MENU_ITEM_ID,
+          menuItemId: getDishUUID(p.dish.id),
+          itemName: p.dish.name,
           quantity: p.quantity,
           unitPrice: p.dish.price,
         })),
       };
 
       const res = await bookingApi.createBooking(payload);
-      if (res.success && res.data) {
+      if (res && res.success && res.data) {
         realBookingCode = res.data.bookingCode;
+        createdBackendUUID = res.data.id;
         setBackendBookingUUID(res.data.id);
         console.log('✅ [Backend API] Đã tạo thành công đơn đặt bàn trên PostgreSQL:', res.data);
+      } else {
+        throw new Error(res?.message || 'Không thể tạo đơn đặt bàn');
       }
     } catch (err: any) {
-      console.warn('⚠️ [Backend API] Lỗi khi gửi đơn lên Backend (chuyển sang dự phòng):', err.message);
+      console.error('⚠️ [Backend API] Lỗi khi gửi đơn lên Backend:', err);
+      alert(`⚠️ Không thể gửi đơn đặt bàn:\n${err.message || 'Lỗi kết nối máy chủ'}`);
+      setIsSubmitting(false);
+      return;
     } finally {
       setIsSubmitting(false);
     }
 
     const newBooking: BookingDetails = {
       bookingId: realBookingCode,
+      bookingCode: realBookingCode,
+      backendUUID: createdBackendUUID || backendBookingUUID || undefined,
       customerName,
       phone: customerPhone,
       email: customerEmail || 'customer@leprimebistro.vn',
@@ -321,33 +502,31 @@ export const BookingPage: React.FC<BookingPageProps> = ({
       tableId: assignedTable.id,
       date: selectedDate,
       timeSlot: effectiveTimeSlot,
+      occasion: selectedOccasion || undefined,
       notes: fullNotes,
       preOrders: preOrderItems,
-      depositAmount: depositRequired,
+      depositAmount: grandTotal,
       totalEstimatedAmount: grandTotal,
       createdAt: 'Vừa xong',
-      status: 'PENDING_DEPOSIT',
+      status: 'PENDING_REVIEW',
       vietqrCode: `TM ${realBookingCode}`,
     };
 
     setCurrentBooking(newBooking);
-    setIsQRModalOpen(true);
+    onAddBooking(newBooking);
+    setIsPendingReviewModalOpen(true);
   };
 
   const handlePaymentSuccess = async () => {
     if (currentBooking) {
-      // GỌI BACKEND THẬT: DUYỆT ĐƠN VÀ XÁC NHẬN CỌC
-      if (backendBookingUUID) {
+      const targetBookingId = currentBooking.backendUUID || backendBookingUUID;
+      // GỌI BACKEND THẬT: XÁC NHẬN THANH TOÁN CỌC -> CHUYỂN SANG CONFIRMED & CẤP MÃ QR 64 KÝ TỰ
+      if (targetBookingId) {
         try {
-          const res = await bookingApi.approveAndRequestDeposit(
-            backendBookingUUID,
-            depositRequired,
-            60,
-            'Khách đã thanh toán cọc thành công qua VietQR'
-          );
-          console.log('✅ [Backend API] Duyệt cọc đơn thành công:', res.data);
+          const res = await bookingApi.confirmBookingPayment(targetBookingId);
+          console.log('✅ [Backend API] Xác nhận thanh toán cọc & phát hành Vé điện tử QR thành công:', res.data);
         } catch (err: any) {
-          console.warn('⚠️ [Backend API] Lỗi duyệt cọc trên backend:', err.message);
+          console.warn('⚠️ [Backend API] Lỗi xác nhận thanh toán cọc trên backend:', err.message);
         }
       }
 
@@ -358,6 +537,7 @@ export const BookingPage: React.FC<BookingPageProps> = ({
       onAddBooking(confirmedBooking);
       setBookingSuccess(confirmedBooking);
       setIsQRModalOpen(false);
+      setIsETicketModalOpen(true);
 
       const matched = findMatchingTable();
       if (matched) {
@@ -490,12 +670,33 @@ export const BookingPage: React.FC<BookingPageProps> = ({
                 </p>
               </div>
             </div>
-            <button
-              onClick={() => setBookingSuccess(null)}
-              className="px-5 py-2.5 bg-[#16A34A] text-white text-xs font-bold rounded-xl hover:bg-[#15803D] transition-colors shrink-0 cursor-pointer shadow-xs"
-            >
-              Đặt Thêm Bàn Mới
-            </button>
+            <div className="flex flex-wrap items-center gap-2.5 shrink-0">
+              <button
+                onClick={() => setIsETicketModalOpen(true)}
+                className="px-4 py-2.5 bg-amber-600 text-white text-xs font-bold rounded-xl hover:bg-amber-700 transition-colors cursor-pointer shadow-xs flex items-center gap-1.5"
+              >
+                <QrCode className="w-4 h-4" />
+                <span>Xem Vé E-Ticket / Mã QR</span>
+              </button>
+              <button
+                onClick={() =>
+                  bookingApi.downloadInvoicePdf(
+                    bookingSuccess.backendUUID || backendBookingUUID || SEED_DATA.BOOKING_ID,
+                    bookingSuccess.bookingId
+                  )
+                }
+                className="px-4 py-2.5 bg-white text-[#14532D] border border-[#86EFAC] text-xs font-bold rounded-xl hover:bg-[#DCFCE7] transition-colors cursor-pointer shadow-xs flex items-center gap-1.5"
+              >
+                <Download className="w-4 h-4" />
+                <span>Tải Hóa Đơn PDF</span>
+              </button>
+              <button
+                onClick={() => setBookingSuccess(null)}
+                className="px-4 py-2.5 bg-[#16A34A] text-white text-xs font-bold rounded-xl hover:bg-[#15803D] transition-colors cursor-pointer shadow-xs"
+              >
+                Đặt Thêm Bàn Mới
+              </button>
+            </div>
           </motion.div>
         )}
       </AnimatePresence>
@@ -658,37 +859,78 @@ export const BookingPage: React.FC<BookingPageProps> = ({
                       </label>
 
                       {/* Main Compact Time Display / Trigger Card */}
-                      <div
-                        onClick={() => setIsTimePickerOpen(!isTimePickerOpen)}
-                        className="p-3.5 sm:p-4 bg-gradient-to-r from-[#FAF7F2] to-[#F3ECE0] border-2 border-[#C4A480] hover:border-[#8C6A43] rounded-2xl cursor-pointer transition-all shadow-xs hover:shadow-md group flex items-center justify-between"
-                      >
-                        <div className="flex items-center gap-3.5">
-                          <div className="w-10 h-10 rounded-xl bg-[#8C6A43] text-white flex items-center justify-center shadow-xs shrink-0 group-hover:scale-105 transition-transform">
-                            <Clock className="w-5 h-5" />
-                          </div>
-                          <div>
-                            <div className="flex items-center gap-2">
-                              <span className="font-serif text-lg sm:text-xl font-bold text-[#2C221E]">
-                                {effectiveTimeSlot}
-                              </span>
-                              <span className="text-[10px] font-bold text-[#8C6A43] bg-white px-2 py-0.5 rounded-full border border-[#E8DFD1]">
-                                {parseInt((isCustomTime ? customArrivalTime : selectedSlot).split(':')[0], 10) < 16 ? '☀️ Ca Trưa' : '🌙 Ca Tối'}
-                              </span>
+                      {(() => {
+                        const isEffectiveSlotPassed = isTimeSlotPassed(effectiveTimeSlot, selectedDate);
+                        return (
+                          <div
+                            onClick={() => setIsTimePickerOpen(!isTimePickerOpen)}
+                            className={`p-3.5 sm:p-4 border-2 rounded-2xl cursor-pointer transition-all shadow-xs hover:shadow-md group flex items-center justify-between ${
+                              isEffectiveSlotPassed
+                                ? 'bg-rose-50/70 border-rose-300 hover:border-rose-400'
+                                : 'bg-gradient-to-r from-[#FAF7F2] to-[#F3ECE0] border-[#C4A480] hover:border-[#8C6A43]'
+                            }`}
+                          >
+                            <div className="flex items-center gap-3.5">
+                              <div
+                                className={`w-10 h-10 rounded-xl text-white flex items-center justify-center shadow-xs shrink-0 group-hover:scale-105 transition-transform ${
+                                  isEffectiveSlotPassed ? 'bg-rose-600' : 'bg-[#8C6A43]'
+                                }`}
+                              >
+                                <Clock className="w-5 h-5" />
+                              </div>
+                              <div>
+                                <div className="flex items-center gap-2">
+                                  <span
+                                    className={`font-serif text-lg sm:text-xl font-bold ${
+                                      isEffectiveSlotPassed ? 'text-rose-950 line-through' : 'text-[#2C221E]'
+                                    }`}
+                                  >
+                                    {effectiveTimeSlot}
+                                  </span>
+                                  <span
+                                    className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+                                      isEffectiveSlotPassed
+                                        ? 'bg-rose-100 text-rose-700 border-rose-300'
+                                        : 'bg-white text-[#8C6A43] border-[#E8DFD1]'
+                                    }`}
+                                  >
+                                    {isEffectiveSlotPassed
+                                      ? '⚠️ Đã qua giờ'
+                                      : parseInt((isCustomTime ? customArrivalTime : selectedSlot).split(':')[0], 10) < 16
+                                      ? '☀️ Ca Trưa'
+                                      : '🌙 Ca Tối'}
+                                  </span>
+                                </div>
+                                <p
+                                  className={`text-[11px] mt-0.5 ${
+                                    isEffectiveSlotPassed ? 'text-rose-600 font-semibold' : 'text-[#6B5E54]'
+                                  }`}
+                                >
+                                  {isEffectiveSlotPassed ? (
+                                    'Khung giờ này đã trôi qua. Bấm "Đổi Giờ" để chọn giờ khác'
+                                  ) : (
+                                    <>
+                                      Giờ dùng bữa: <strong>{effectiveTimeSlot}</strong>
+                                    </>
+                                  )}
+                                </p>
+                              </div>
                             </div>
-                            <p className="text-[11px] text-[#6B5E54] mt-0.5">
-                              Giờ dùng bữa: <strong>{effectiveTimeSlot}</strong>
-                            </p>
-                          </div>
-                        </div>
 
-                        <button
-                          type="button"
-                          className="px-3.5 py-2 rounded-xl bg-white border border-[#E8DFD1] text-xs font-bold text-[#8C6A43] group-hover:bg-[#8C6A43] group-hover:text-white transition-all flex items-center gap-1.5 shadow-2xs"
-                        >
-                          <span>{isTimePickerOpen ? 'Đóng Bảng' : 'Đổi Giờ'}</span>
-                          {isTimePickerOpen ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-                        </button>
-                      </div>
+                            <button
+                              type="button"
+                              className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-2xs ${
+                                isEffectiveSlotPassed
+                                  ? 'bg-rose-600 text-white hover:bg-rose-700 animate-pulse'
+                                  : 'bg-white border border-[#E8DFD1] text-[#8C6A43] group-hover:bg-[#8C6A43] group-hover:text-white'
+                              }`}
+                            >
+                              <span>{isTimePickerOpen ? 'Đóng Bảng' : 'Đổi Giờ'}</span>
+                              {isTimePickerOpen ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                            </button>
+                          </div>
+                        );
+                      })()}
 
                       {/* Expandable Time Picker Modal / Panel */}
                       <AnimatePresence>
@@ -978,6 +1220,17 @@ export const BookingPage: React.FC<BookingPageProps> = ({
                     <span className="text-[10px] font-bold text-[#8C6A43] bg-[#FAF4EB] px-2.5 py-0.5 rounded-full border border-[#E8DFD1]">
                       Tùy chọn • Không bắt buộc
                     </span>
+                    {isDbMenuConnected && (
+                      <span className="text-[10px] font-semibold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200/80 flex items-center gap-1.5 shadow-2xs">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                        Thực đơn Live từ Database
+                      </span>
+                    )}
+                    {isLoadingDishes && (
+                      <span className="text-[10px] font-medium text-[#8C6A43] flex items-center gap-1 animate-pulse">
+                        <Loader2 className="w-3 h-3 animate-spin" /> Đang nạp thực đơn từ DB...
+                      </span>
+                    )}
                   </div>
                   <p className="text-xs text-[#78716C] mt-0.5">
                     Bếp trưởng chuẩn bị tẩm ướp & nướng nhiệt độ vàng, phục vụ ngay khi quý khách nhập tiệc.
@@ -1017,13 +1270,7 @@ export const BookingPage: React.FC<BookingPageProps> = ({
                 >
                   {/* Category Filter Tabs */}
                   <div className="flex flex-wrap items-center gap-2 p-1.5 bg-[#FAF7F2] rounded-2xl border border-[#E8DFD1]">
-                    {[
-                      { id: 'ALL', label: 'Tất Cả', icon: Utensils, count: SIGNATURE_DISHES.length },
-                      { id: 'Set Menu & Combo', label: '🌟 Set Menu & Combo', icon: Sparkles, count: SIGNATURE_DISHES.filter(d => d.category === 'Set Menu & Combo').length },
-                      { id: 'Bò Dry-Aged & Món Chính', label: '🥩 Bò Dry-Aged & Mains', icon: Flame, count: SIGNATURE_DISHES.filter(d => d.category === 'Bò Dry-Aged & Món Chính').length },
-                      { id: 'Rượu Vang & Champagne', label: '🍷 Vang Grand Cru', icon: Wine, count: SIGNATURE_DISHES.filter(d => d.category === 'Rượu Vang & Champagne').length },
-                      { id: 'Khai Vị & Tráng Miệng', label: '🍰 Khai Vị & Tráng Miệng', icon: Award, count: SIGNATURE_DISHES.filter(d => d.category === 'Khai Vị & Tráng Miệng').length },
-                    ].map((cat) => {
+                    {availableCategories.map((cat) => {
                       const isSelected = selectedMenuCategory === cat.id;
                       return (
                         <button
@@ -1051,7 +1298,7 @@ export const BookingPage: React.FC<BookingPageProps> = ({
 
                   {/* Dishes Grid */}
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {SIGNATURE_DISHES
+                    {dishes
                       .filter((dish) => selectedMenuCategory === 'ALL' || dish.category === selectedMenuCategory)
                       .map((dish) => {
                         const qty = selectedDishes[dish.id] || 0;
@@ -1419,7 +1666,7 @@ export const BookingPage: React.FC<BookingPageProps> = ({
                     Món ăn đặt trước:
                   </span>
                   {Object.entries(selectedDishes).map(([id, qty]) => {
-                    const dish = SIGNATURE_DISHES.find((d) => d.id === id);
+                    const dish = dishes.find((d) => d.id === id) || SIGNATURE_DISHES.find((d) => d.id === id);
                     if (!dish) return null;
                     return (
                       <div key={id} className="flex items-center justify-between text-[11px]">
@@ -1503,14 +1750,29 @@ export const BookingPage: React.FC<BookingPageProps> = ({
             </div>
 
             {/* Submit Action Button */}
-            <button
-              onClick={handleOpenDepositModal}
-              disabled={isSubmitting}
-              className="w-full py-4 bg-gradient-to-r from-[#C4A480] to-[#B3936F] hover:brightness-105 text-white text-xs font-bold rounded-2xl flex items-center justify-center gap-2 shadow-md cursor-pointer transition-all active:scale-98 disabled:opacity-60"
-            >
-              <span>{isSubmitting ? 'Đang gửi yêu cầu tới máy chủ...' : 'Xác Nhận Đặt Bàn & Giữ Chỗ VietQR'}</span>
-              <ArrowRight className="w-4 h-4" />
-            </button>
+            {(() => {
+              const isEffectiveSlotPassed = isTimeSlotPassed(effectiveTimeSlot, selectedDate);
+              return (
+                <button
+                  onClick={handleOpenDepositModal}
+                  disabled={isSubmitting || isEffectiveSlotPassed}
+                  className={`w-full py-4 text-xs font-bold rounded-2xl flex items-center justify-center gap-2 shadow-md transition-all ${
+                    isEffectiveSlotPassed
+                      ? 'bg-stone-200 text-stone-500 cursor-not-allowed border border-stone-300 shadow-none'
+                      : 'bg-gradient-to-r from-[#C4A480] to-[#B3936F] hover:brightness-105 text-white cursor-pointer active:scale-98 disabled:opacity-60'
+                  }`}
+                >
+                  <span>
+                    {isSubmitting
+                      ? 'Đang gửi yêu cầu tới Lễ tân...'
+                      : isEffectiveSlotPassed
+                      ? '⚠️ Khung Giờ Đã Qua - Vui Lòng Đổi Giờ'
+                      : 'Gửi Yêu Cầu Đặt Bàn (Lễ Tân Sẽ Gọi Tư Vấn Trong 15 Phút)'}
+                  </span>
+                  <ArrowRight className="w-4 h-4" />
+                </button>
+              );
+            })()}
 
             <div className="text-[11px] text-[#78716C] text-center space-y-1">
               <p className="flex items-center justify-center gap-1 text-[#3D7058] font-medium">
@@ -1523,12 +1785,162 @@ export const BookingPage: React.FC<BookingPageProps> = ({
         </div>
       </div>
 
+            {/* Modal Tiếp Nhận Đơn & Chờ Lễ Tân Tư Vấn (Chuẩn Nghiệp Vụ F&B Cao Cấp) */}
+      <AnimatePresence>
+        {isPendingReviewModalOpen && currentBooking && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 15 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 15 }}
+              className="relative w-full max-w-lg bg-white rounded-3xl shadow-2xl border border-amber-200 overflow-hidden"
+            >
+              <div className="p-6 bg-gradient-to-r from-amber-50 via-white to-amber-50 border-b border-amber-100 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-700">
+                    <Phone className="w-5 h-5 animate-pulse" />
+                  </div>
+                  <div>
+                    <h3 className="font-serif text-lg font-bold text-slate-900">
+                      Yêu Cầu Đặt Bàn Đã Được Tiếp Nhận!
+                    </h3>
+                    <p className="text-xs text-slate-500">
+                      Mã đơn: <strong className="font-mono text-amber-700">{currentBooking.bookingId}</strong>
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsPendingReviewModalOpen(false)}
+                  className="p-2 text-slate-400 hover:text-slate-700 rounded-full"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="p-6 space-y-4 text-xs">
+                <div className="p-3 bg-amber-50/80 border border-amber-200 rounded-2xl flex items-center justify-between">
+                  <div>
+                    <span className="text-[10px] font-bold text-amber-800 uppercase tracking-wider block">
+                      Trạng thái nghiệp vụ:
+                    </span>
+                    <span className="font-bold text-amber-900 text-sm flex items-center gap-1.5 mt-0.5">
+                      <Clock className="w-4 h-4 text-amber-600" />
+                      PENDING_REVIEW (Chờ Lễ Tân Gọi Tư Vấn)
+                    </span>
+                  </div>
+                  <span className="text-[10px] font-bold bg-amber-200 text-amber-900 px-2.5 py-1 rounded-full border border-amber-300">
+                    SLA: 15 Phút
+                  </span>
+                </div>
+
+                <div className="space-y-2 p-3 bg-stone-50 rounded-2xl border border-stone-200 text-stone-700">
+                  <div className="flex justify-between">
+                    <span className="text-stone-500">Khách hàng:</span>
+                    <span className="font-bold text-stone-900">{currentBooking.customerName} ({currentBooking.phone})</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-stone-500">Thời gian dùng bữa:</span>
+                    <span className="font-bold text-stone-900">{currentBooking.timeSlot} • {currentBooking.date}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-stone-500">Quy mô tiệc:</span>
+                    <span className="font-bold text-stone-900">{currentBooking.partySize} Khách</span>
+                  </div>
+                  {currentBooking.preOrders && currentBooking.preOrders.length > 0 ? (
+                    <div className="space-y-1.5 pt-2 border-t border-stone-200">
+                      <div className="flex justify-between text-xs text-stone-600">
+                        <span>• Tiền cọc giữ bàn tiêu chuẩn:</span>
+                        <span className="font-mono font-semibold">200.000 ₫</span>
+                      </div>
+                      <div className="flex justify-between text-xs text-amber-900 font-medium">
+                        <span>• Tiền cọc món Signature (100%):</span>
+                        <span className="font-mono font-bold text-amber-800">
+                          {new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(
+                            Math.max(0, currentBooking.depositAmount - 200000)
+                          )}
+                        </span>
+                      </div>
+                      <div className="flex justify-between items-center pt-2 border-t border-dashed border-amber-200">
+                        <span className="text-stone-800 font-bold text-xs">Tổng cọc dự kiến (bàn + món):</span>
+                        <span className="font-bold text-amber-800 font-serif text-base">
+                          {new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(currentBooking.depositAmount)}
+                        </span>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex justify-between">
+                      <span className="text-stone-500">Tiền cọc dự kiến (sau khi chốt):</span>
+                      <span className="font-bold text-amber-800 font-serif text-sm">
+                        {new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(currentBooking.depositAmount)}
+                      </span>
+                    </div>
+                  )}
+                </div>
+
+                <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-2xl text-emerald-800 space-y-1">
+                  <p className="font-bold flex items-center gap-1">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                    Quy trình tiếp nhận chu đáo từ Le Prime:
+                  </p>
+                  <p className="text-[11px] leading-relaxed text-emerald-700">
+                    Nhân viên Lễ tân trực quầy sẽ liên hệ trực tiếp qua số điện thoại <strong>{currentBooking.phone}</strong> trong vòng <strong>15 phút</strong> để tư vấn chi tiết thực đơn, vị trí bàn và gửi thông tin thanh toán tiền cọc qua Email / SMS.
+                  </p>
+                </div>
+              </div>
+
+              <div className="p-5 border-t border-slate-100 bg-slate-50/80 flex flex-col gap-2.5">
+                {onNavigate && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsPendingReviewModalOpen(false);
+                      onNavigate('host');
+                    }}
+                    className="w-full py-2.5 px-4 bg-gradient-to-r from-rose-900 to-purple-900 hover:brightness-110 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-sm transition-all"
+                  >
+                    <Building2 className="w-4 h-4 text-amber-300" />
+                    <span>⚡ Chuyển Sang Màn Hình Lễ Tân (Xem & Duyệt Đơn Ngay)</span>
+                  </button>
+                )}
+
+                <div className="p-3 bg-amber-50/80 border border-amber-200 rounded-xl text-[11px] text-amber-900 leading-relaxed text-center">
+                  ⏳ <strong>Quy trình bảo đảm:</strong> Tiền cọc chỉ được mở thanh toán sau khi Lễ tân gọi điện tư vấn và chốt thực đơn với quý khách.
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setIsPendingReviewModalOpen(false)}
+                  className="w-full py-2.5 px-4 bg-stone-900 hover:bg-stone-800 text-white rounded-xl text-xs font-bold transition-all shadow-xs"
+                >
+                  Đã Hiểu & Đóng
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
       {/* VietQR Payment Modal */}
       <QRPaymentModal
         isOpen={isQRModalOpen}
         onClose={() => setIsQRModalOpen(false)}
         booking={currentBooking}
         onPaymentSuccess={handlePaymentSuccess}
+      />
+
+      {/* E-Ticket Dynamic 64-Char QR Modal (UC-12) */}
+      <ETicketModal
+        isOpen={isETicketModalOpen}
+        onClose={() => setIsETicketModalOpen(false)}
+        bookingIdOrCode={
+          bookingSuccess?.backendUUID ||
+          currentBooking?.backendUUID ||
+          backendBookingUUID ||
+          bookingSuccess?.bookingId ||
+          currentBooking?.bookingId
+        }
+        initialBookingDetails={bookingSuccess || currentBooking}
       />
     </div>
   );

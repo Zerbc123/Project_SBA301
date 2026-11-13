@@ -142,34 +142,5 @@ INSERT INTO bookings (
 INSERT INTO booking_tables (booking_id, table_id) VALUES
 ('c0000000-0000-0000-0000-000000000001', 'b3000000-0000-0000-0000-000000000004');
 
--- Seed UC-10: Đơn Đặt Tiệc Sự Kiện Đoàn Đông / Bao Trọn Tầng (EVENT_INQUIRY)
-INSERT INTO bookings (
-    id, booking_code, user_id, guest_name, guest_phone, guest_email,
-    booking_date, time_slot_id, guest_count, total_deposit, status,
-    event_type, target_floor, company_name, estimated_budget,
-    stage_audio_required, decoration_required, callback_deadline, manager_call_status,
-    special_notes, staff_notes
-) VALUES (
-    'c0000000-0000-0000-0000-000000000010',
-    'EV2610260001',
-    'a0000000-0000-0000-0000-000000000005',
-    'Trần Hoàng Nam',
-    '0909888999',
-    'nam.tran@techcorp.vn',
-    '2026-11-20',
-    'b1000000-0000-0000-0000-000000000002',
-    50,
-    0.00,
-    'EVENT_INQUIRY',
-    'COMPANY_PARTY',
-    3,
-    'Tập đoàn Công nghệ TechCorp VN',
-    65000000.00,
-    TRUE,
-    TRUE,
-    NOW() + INTERVAL '15 minutes',
-    'PENDING_CALL',
-    'Tiệc Year End Party 50 khách bao trọn Tầng 3 Sky Lounge Rooftop. Cần âm thanh, 2 micro không dây, máy chiếu màn lớn và tháp rượu Champagne.',
-    'Chờ Quản lý ca gọi tư vấn trực tiếp trong 15 phút'
-);
+
 

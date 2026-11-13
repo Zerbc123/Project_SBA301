@@ -205,7 +205,7 @@ flowchart LR
 
     subgraph Sub_Analytics ["Báo cáo Doanh thu & Quản trị"]
         UC31["UC-31: Báo cáo Doanh thu, RevPASH & Tỷ lệ No-Show"]
-        UC32["UC-32: Bản đồ nhiệt Bàn ăn (Popularity Heatmap)"]
+        UC32["UC-32: Xếp hạng Độ Hot Thẻ Box Bàn (Table Box Heatmap Analytics)"]
     end
 
     subgraph Sub_Auto ["Tiến trình Tự động Ngầm"]
@@ -239,7 +239,7 @@ flowchart LR
 | **2. Experience** | `FR-EXP-01` | Showcase Không gian Nhà hàng | Giới thiệu hình ảnh độ nét cao của từng tầng (Sảnh chính, Phòng VIP, Rooftop). | **P1 (Quan trọng)** |
 | | `FR-EXP-02` | Thực đơn Điện tử (Digital Menu) | Phân loại danh mục món, ảnh món ăn, giá bán, thành phần dị ứng, tag Best Seller. | **P0 (Bắt buộc)** |
 | | `FR-EXP-03` | Đánh giá & Phản hồi sau ăn | Khách gửi đánh giá 1-5 sao, viết nhận xét và upload hình ảnh sau bữa ăn. | **P1 (Quan trọng)** |
-| **3. Booking Engine** | `FR-BOOK-01` | Bộ lọc Tìm kiếm Chỗ thông minh | Lọc theo Ngày, Khung ca, Số người lớn, Trẻ em (yêu cầu ghế em bé), Chọn tầng. | **P0 (Bắt buộc)** |
+| **3. Booking Engine** | `FR-BOOK-01` | Bộ lọc Tìm kiếm Chỗ thông minh | Lọc theo Ngày, Khung ca, Số khách, Phân khu không gian Zone (loại bỏ chọn tầng trên giao diện khách). | **P0 (Bắt buộc)** |
 | | `FR-BOOK-02` | Đặt bàn theo Thông tin & Khu vực | Khách chọn Ngày, Khung giờ, Số khách, Loại không gian Zone (Ban công, Bar, VIP, Cửa kính). | **P0 (Bắt buộc)** |
 | | `FR-BOOK-03` | Khóa giữ bàn 5 phút (Redlock) | Bấm giữ bàn $\rightarrow$ Redis Redlock khóa bàn trong 100ms, bộ đếm ngược 05:00. | **P0 (Bắt buộc)** |
 | | `FR-BOOK-04` | Đặt trước Món ăn Signature | Chọn các món đặc biệt (Bò Wagyu A5, Set Rượu vang) trong cùng luồng cọc bàn. | **P1 (Quan trọng)** |
@@ -252,13 +252,14 @@ flowchart LR
 | | `FR-PAY-03` | Phát hành Vé điện tử QR Check-in | Sinh mã QR bảo mật động gửi qua màn hình và Email của khách sau khi cọc xong. | **P0 (Bắt buộc)** |
 | | `FR-PAY-04` | Hủy đặt bàn & Hoàn cọc tự động | Xử lý hoàn tiền 100% nếu hủy trước 24h, hoàn 50% nếu hủy trước 6h theo ma trận. | **P1 (Quan trọng)** |
 | | `FR-PAY-05` | Yêu cầu Xuất Hóa đơn đỏ VAT | Nhập thông tin Mã số thuế, Tên công ty để xuất hóa đơn điện tử cho doanh nghiệp. | **P2 (Nâng cao)** |
-| **6. Host Dispatch** | `FR-DISP-01` | Màn hình Lưới Thẻ Box Bàn Live trên Tablet | Giao diện cảm ứng tối ưu cho iPad/Tablet hiển thị lưới các Box bàn theo tầng, trạng thái màu sắc. | **P0 (Bắt buộc)** |
-| | `FR-DISP-02` | Quét Camera QR Check-in đón khách | Quét mã QR trên điện thoại khách để đối soát đơn, chuyển trạng thái sang `SEATED`. | **P0 (Bắt buộc)** |
+| **6. Host Dispatch** | `FR-DISP-01` | Màn hình Lưới Thẻ Box Bàn Live trên Tablet | Giao diện cảm ứng tối ưu cho iPad/Tablet hiển thị lưới các Box bàn theo phân khu, trạng thái màu sắc. | **P0 (Bắt buộc)** |
+| | `FR-DISP-02` | Quét Camera QR Check-in đón khách | Quét mã QR qua Camera (bộ giải mã kép BarcodeDetector + jsQR) đối soát đơn, chuyển `SEATED` và lưu DB. | **P0 (Bắt buộc)** |
 | | `FR-DISP-03` | Đổi trạng thái bàn 1 chạm | Chạm vào Thẻ Box bàn để chuyển đổi: `AVAILABLE` $\rightarrow$ `OCCUPIED` $\rightarrow$ `CLEANING`. | **P0 (Bắt buộc)** |
 | | `FR-DISP-04` | Tiếp nhận Khách vãng lai (Walk-in) | Lễ tân tự nhập nhanh khách tại cửa vào bàn trống mà không cần thanh toán cọc. | **P0 (Bắt buộc)** |
 | | `FR-DISP-05` | Đổi bàn giữa chừng (Re-assignment) | Cho phép chuyển đoàn khách sang bàn khác theo yêu cầu khi bàn kia đang trống. | **P1 (Quan trọng)** |
 | | `FR-DISP-06` | Cơ chế Ghép / Gộp Box Bàn trực quan | Thao tác chọn 2 hay nhiều Thẻ Box bàn để gộp đơn, cộng dồn món và cọc cho đoàn đông. | **P0 (Bắt buộc)** |
 | | `FR-DISP-07` | Ghi chú Nội bộ ca trực | Lễ tân lưu ghi chú: "Bàn VIP hay uống rượu nặng", "Khách phàn nàn máy lạnh". | **P1 (Quan trọng)** |
+| | `FR-DISP-08` | Gọi món tại bàn & Thanh toán POS (Waiter POS) | Phục vụ gọi thêm món lưu vào `table_order_items`; Thu ngân thanh toán khấu trừ cọc và chuyển `COMPLETED`. | **P0 (Bắt buộc)** |
 | **7. Table & Floor Mgmt** | `FR-BLD-01` | Quản lý Danh mục Bàn ăn dạng Box | Quản lý danh mục bàn theo bảng CRUD tiêu chuẩn (Mã bàn, Khu vực, Sức chứa, Tiền cọc). | **P0 (Bắt buộc)** |
 | | `FR-BLD-02` | Cấu hình Trạng thái & Bật/Tắt bảo trì | Bật/tắt trạng thái hoạt động của bàn, khóa bảo trì bàn hỏng hóc. | **P1 (Quan trọng)** |
 | | `FR-BLD-03` | Cấu hình Sức chứa & Phí cọc riêng | Đặt Min/Max ghế cho từng bàn và thiết lập phí cọc riêng cho các bàn VIP/đắc địa. | **P0 (Bắt buộc)** |
@@ -595,12 +596,12 @@ Dưới đây là đặc tả chi tiết của từng Use Case nghiệp vụ ch�
 
 ---
 
-### UC-32: Bản đồ Nhiệt Vị trí Bàn ăn (Table Popularity Heatmap)
-* **Tác nhân:** Restaurant Owner / Admin.
-* **Mô tả:** Trực quan hóa trực tiếp trên sơ đồ 2D của nhà hàng:
-  * Các bàn có tần suất khách đặt nhiều nhất được tô màu **Đỏ cam rực rỡ** (thường là bàn cạnh cửa kính ngắm phố hoặc góc sofa lãng mạn).
-  * Các bàn ít được khách chọn tô màu **Xanh nhạt** (thường là bàn cạnh lối đi bếp hoặc gần nhà vệ sinh).
-  * Giúp chủ nhà hàng đưa ra quyết định: Bố trí thêm vách ngăn cây xanh cho bàn ế ẩm, hoặc tăng tiền cọc đối với các bàn góc view đẹp.
+### UC-32: Phân tích Xếp hạng Độ Hot Bàn ăn Dạng Thẻ Box cho Quản Trị (Admin Table Box Heatmap & Popularity Analytics)
+* **Tác nhân:** Restaurant Owner / Admin (Chỉ hiển thị nội bộ trong Admin Studio, tuyệt đối không public ra ngoài cho khách).
+* **Mô tả:** Trực quan hóa dữ liệu kinh doanh dưới dạng Lưới Thẻ Box Bàn (Grid Cards) theo từng phân khu (`OUTDOOR`, `WINDOW_VIEW`, `PRIVATE_VIP`, `BAR_COUNTER`, `STANDARD`):
+  * Phân loại màu sắc thẻ bàn theo 4 cấp độ nhiệt: **HOT (Đỏ rực, Heat Score $\ge$ 75%)**, **WARM (Vàng cam, 50-74%)**, **NORMAL (Xanh lá, 25-49%)**, **COOL (Xanh lam, < 25%)**.
+  * Hiển thị chi tiết trên từng Box bàn: Tên bàn, khu vực Zone, tỷ lệ % Heat Score, tổng số lượt đặt thành công và tổng doanh thu thực tế sinh ra từ bàn đó.
+  * Giúp chủ nhà hàng đưa ra quyết định: Bố trí lại menu/khuyến mãi cho các bàn ít khách (COOL) hoặc tối ưu giá cọc và dịch vụ cho các bàn đắt khách (HOT).
 
 ---
 

@@ -113,8 +113,17 @@ class BookingServiceTest {
                 .tableIds(List.of(tableId))
                 .build();
 
+
+        // Giả lập bàn yêu cầu lẫn toàn bộ danh sách bàn dự phòng đều đã có người đặt
         when(bookingRepository.findBookedTableIds(eq(bookingDate), eq(timeSlotId), anyList()))
-                .thenReturn(List.of(tableId));
+                .thenReturn(List.of(
+                        tableId,
+                        UUID.fromString("b3000000-0000-0000-0000-000000000001"),
+                        UUID.fromString("b3000000-0000-0000-0000-000000000002"),
+                        UUID.fromString("b3000000-0000-0000-0000-000000000003"),
+                        UUID.fromString("b3000000-0000-0000-0000-000000000004"),
+                        UUID.fromString("b3000000-0000-0000-0000-000000000005")
+                ));
 
         assertThrows(TableAlreadyBookedException.class, () -> bookingService.createBooking(request, userId));
         verify(bookingRepository, never()).save(any());
@@ -452,7 +461,7 @@ class BookingServiceTest {
                         .targetBookingStatus("AWAITING_PAYMENT")
                         .build();
 
-        BookingResponse response = bookingService.updateEventConsultation(bookingId, consultReq, managerId);
+        BookingResponse response = bookingService.updateEventConsultation(bookingId.toString(), consultReq, managerId);
 
         assertNotNull(response);
         assertEquals("AWAITING_PAYMENT", response.getStatus());
@@ -782,6 +791,43 @@ class BookingServiceTest {
         verify(bookingEventProducer, times(1)).publishOneTouchTableStatusChanged(
                 eq("SKY-05"), eq("AVAILABLE"), eq("HOST"), isNull(), eq("Đã xịt khuẩn và setup dao nĩa mới")
         );
+    }
+
+    @Test
+    void confirmBookingAfterPayment_FromPendingOrAwaiting_Generates64CharQrAndConfirms() {
+        UUID bookingId = UUID.randomUUID();
+        Booking booking = Booking.builder()
+                .id(bookingId)
+                .bookingCode("BK2610310001")
+                .guestName("Nguyễn Trần Bảo Anh")
+                .guestPhone("0909123456")
+                .guestEmail("baoanh.nguyen@gmail.com")
+                .bookingDate(bookingDate)
+                .timeSlotId(timeSlotId)
+                .guestCount(2)
+                .totalDeposit(BigDecimal.valueOf(650000))
+                .status(BookingStatus.PENDING_REVIEW)
+                .build();
+
+        when(bookingRepository.findById(bookingId)).thenReturn(Optional.of(booking));
+        when(bookingRepository.save(any(Booking.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        BookingResponse confirmed = bookingService.confirmBookingAfterPayment(bookingId);
+
+        assertNotNull(confirmed);
+        assertEquals("CONFIRMED", confirmed.getStatus());
+        assertNotNull(confirmed.getCheckinQrToken());
+        assertEquals(64, confirmed.getCheckinQrToken().length());
+        assertEquals("DELIVERED", confirmed.getTicketZnsStatus());
+        assertEquals("SENT", confirmed.getTicketEmailStatus());
+        verify(bookingEventProducer, times(1)).publishBookingConfirmed(any(Booking.class));
+        verify(bookingEventProducer, times(1)).publishTicketIssued(any(Booking.class));
+
+        // Idempotent call when already CONFIRMED
+        BookingResponse secondCall = bookingService.confirmBookingAfterPayment(bookingId);
+        assertEquals("CONFIRMED", secondCall.getStatus());
+        assertEquals(confirmed.getCheckinQrToken(), secondCall.getCheckinQrToken());
+        verify(bookingEventProducer, times(1)).publishBookingConfirmed(any(Booking.class));
     }
 }
 
